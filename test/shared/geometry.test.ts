@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inflate, intersects, physicalToCss, union } from "../../src/shared/geometry.js";
+import { clipToBounds, inflate, intersects, physicalToCss, union } from "../../src/shared/geometry.js";
 
 describe("physicalToCss", () => {
   it("keeps the rect unchanged at 100% scaling", () => {
@@ -33,6 +33,27 @@ describe("intersects", () => {
 
   it("is false for rects that only touch at an edge", () => {
     expect(intersects({ x: 0, y: 0, w: 10, h: 10 }, { x: 10, y: 0, w: 10, h: 10 })).toBe(false);
+  });
+});
+
+describe("clipToBounds", () => {
+  const screen = { x: 0, y: 0, w: 1920, h: 1080 };
+
+  it("keeps a rect that is fully inside", () => {
+    expect(clipToBounds({ x: 10, y: 10, w: 100, h: 50 }, screen)).toEqual({ x: 10, y: 10, w: 100, h: 50 });
+  });
+
+  it("cuts the part that sticks out of the bounds", () => {
+    expect(clipToBounds({ x: 1800, y: 1000, w: 300, h: 200 }, screen)).toEqual({ x: 1800, y: 1000, w: 120, h: 80 });
+  });
+
+  it("cuts negative origins", () => {
+    expect(clipToBounds({ x: -50, y: -20, w: 100, h: 40 }, screen)).toEqual({ x: 0, y: 0, w: 50, h: 20 });
+  });
+
+  it("returns null when nothing is left inside", () => {
+    expect(clipToBounds({ x: 2000, y: 10, w: 100, h: 50 }, screen)).toBeNull();
+    expect(clipToBounds({ x: 1920, y: 10, w: 100, h: 50 }, screen)).toBeNull();
   });
 });
 

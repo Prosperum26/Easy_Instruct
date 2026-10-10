@@ -82,7 +82,7 @@ function animateTo(target: Rect[]) {
 
 function renderStep(step: RenderMessage, display: DisplayInfo) {
   const highlights = step.highlights.map((h) =>
-    inflate(physicalToCss(h, display.scaleFactor, display.originPhysical), HIGHLIGHT_PADDING),
+    inflate(physicalToCss(h, display.scaleFactor, display.boundsPhysical), HIGHLIGHT_PADDING),
   );
   animateTo(highlights);
   renderBubble(step, highlights);

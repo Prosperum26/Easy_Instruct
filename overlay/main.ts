@@ -51,7 +51,10 @@ function createOverlayWindow() {
   window.setIgnoreMouseEvents(true, { forward: true });
 
   const physical = screen.dipToScreenRect(null, display.bounds);
-  const info: DisplayInfo = { scaleFactor: display.scaleFactor, originPhysical: { x: physical.x, y: physical.y } };
+  const info: DisplayInfo = {
+    scaleFactor: display.scaleFactor,
+    boundsPhysical: { x: physical.x, y: physical.y, w: physical.width, h: physical.height },
+  };
   return { window, info, physical };
 }
 

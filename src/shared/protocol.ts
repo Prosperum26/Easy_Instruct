@@ -23,14 +23,16 @@ export type ServerToOverlay =
 
 export type RenderMessage = Extract<ServerToOverlay, { type: "render" }>;
 
-/** Messages the overlay sends back to the server. */
-export type OverlayToServer =
-  | { type: "button"; stepId: string; button: ButtonId }
-  | { type: "ask"; stepId: string; question: string };
-
-/** Where the overlay window sits, so the renderer can map physical pixels to CSS pixels. */
+/** Where the overlay window sits, so physical pixels can be mapped to CSS pixels and clipped. */
 export interface DisplayInfo {
   scaleFactor: number;
-  /** Top-left of the display in physical screen pixels. */
-  originPhysical: { x: number; y: number };
+  /** The display in physical screen pixels. */
+  boundsPhysical: Rect;
 }
+
+/** Messages the overlay sends back to the server. */
+export type OverlayToServer =
+  | { type: "hello"; token: string; display: DisplayInfo }
+  | { type: "display"; display: DisplayInfo }
+  | { type: "button"; stepId: string; button: ButtonId }
+  | { type: "ask"; stepId: string; question: string };

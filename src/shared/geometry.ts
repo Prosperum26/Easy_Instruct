@@ -28,6 +28,16 @@ export function intersects(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
+/** The part of `rect` inside `bounds`, or null when they do not overlap. */
+export function clipToBounds(rect: Rect, bounds: Rect): Rect | null {
+  const left = Math.max(rect.x, bounds.x);
+  const top = Math.max(rect.y, bounds.y);
+  const right = Math.min(rect.x + rect.w, bounds.x + bounds.w);
+  const bottom = Math.min(rect.y + rect.h, bounds.y + bounds.h);
+  if (right <= left || bottom <= top) return null;
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
 export function union(rects: Rect[]): Rect | null {
   if (rects.length === 0) return null;
   const left = Math.min(...rects.map((r) => r.x));
