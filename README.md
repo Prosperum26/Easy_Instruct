@@ -15,9 +15,22 @@ Easy Instruct là một **MCP server**. Khi một AI agent (Claude Code, Cursor,
 - **Không bao giờ kẹt.** Nếu không định vị được mục tiêu trên màn hình, bong bóng vẫn hiện kèm mô tả bằng chữ.
 - **Chạy local.** Không theo dõi bàn phím; ảnh chụp chỉ nằm trong bộ nhớ.
 
-## Phạm vi hiện tại
+## Có thể nhờ agent dạy gì
 
-Dạy người dùng **khám phá và đọc hiểu một repo vừa clone** trong **VS Code** trên **Windows**: cấu trúc thư mục → README → entry point → luồng chính → cài đặt → chạy app → chạy test.
+Easy Instruct không gắn với một loại bài học nào. Nó chỉ là tay và mắt của agent: tô sáng, giải thích, rồi quan sát xem bạn làm đúng chưa. Agent biết làm gì trong VS Code thì có thể dạy bạn tự làm việc đó.
+
+| Bạn muốn | Ví dụ câu nói với agent |
+|---|---|
+| Hiểu một repo vừa clone | "Dạy mình repo này chạy thế nào" |
+| Dùng Git bằng giao diện | "Chỉ mình commit và push bằng Source Control", "Hướng dẫn mình chuyển sang nhánh main" |
+| Chạy lệnh trong terminal | "Hướng dẫn mình cài dependency rồi chạy test", "Lệnh này báo lỗi, chỉ mình sửa" |
+| Học một tính năng của VS Code | "Dạy mình dùng debugger", "Chỉ mình tìm và thay thế trong cả project" |
+| Làm một việc nhiều bước | "Hướng dẫn mình tạo pull request", "Chỉ mình tạo file mới rồi import nó vào `main.py`" |
+| Hiểu một đoạn code | "Giải thích file này cho mình", "Hàm này được gọi từ đâu?" |
+
+Bài học tốt đến đâu phụ thuộc vào agent: agent hiểu việc cần làm càng rõ thì các bước càng sát với tình huống của bạn.
+
+**Giới hạn hiện tại:** chỉ VS Code trên Windows. Vùng sáng tự tìm được phần giao diện, chữ và dòng code trong VS Code; khi bạn chuyển sang ứng dụng khác, overlay tự ẩn. Hỗ trợ trình duyệt (Chrome) đang được lên kế hoạch.
 
 ## Cài đặt
 
