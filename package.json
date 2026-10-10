@@ -2,6 +2,16 @@
   "name": "easy-instruct",
   "version": "0.1.0",
   "description": "MCP server that lets AI agents teach users step by step with a full-screen spotlight overlay.",
+  "keywords": ["mcp", "teaching", "onboarding", "overlay", "vscode", "electron", "claude-code"],
+  "author": "Phu Hung",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prosperum26/Easy_Instruct.git"
+  },
+  "homepage": "https://github.com/Prosperum26/Easy_Instruct#readme",
+  "bugs": {
+    "url": "https://github.com/Prosperum26/Easy_Instruct/issues"
+  },
   "type": "module",
   "bin": {
     "easy-instruct": "dist/server/index.js"
@@ -9,6 +19,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "prepare": "node scripts/build.mjs",
+    "prepack": "node scripts/build.mjs",
     "typecheck": "tsc",
     "test": "vitest run",
     "overlay:demo": "npm run build && electron dist/overlay/main.cjs",
@@ -21,8 +32,7 @@
   "os": [
     "win32"
   ],
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/ws": "^8.18.2",

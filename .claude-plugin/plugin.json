@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "description": "Hands-on lessons on the user's own screen: a full-screen overlay highlights VS Code parts, files and lines of code, explains them step by step, and watches while the user does every action.",
   "author": { "name": "Phu Hung" },
-  "license": "UNLICENSED",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "keywords": ["teaching", "onboarding", "overlay", "vscode", "mcp"]
 }
