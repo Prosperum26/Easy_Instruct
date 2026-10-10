@@ -27,6 +27,7 @@ namespace WinHelper
             WindowCommands.Register(dispatcher);
             CaptureCommands.Register(dispatcher);
             UiaCommands.Register(dispatcher);
+            OcrCommands.Register(dispatcher);
             return dispatcher;
         }
 

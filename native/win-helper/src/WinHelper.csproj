@@ -17,6 +17,8 @@
     <Nullable>disable</Nullable>
     <InvariantGlobalization>true</InvariantGlobalization>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Selects OcrEngineWinRt.cs; host.ps1 compiles without it and gets OcrEngineReflection.cs. -->
+    <DefineConstants>$(DefineConstants);WINRT_PROJECTION</DefineConstants>
   </PropertyGroup>
 
 </Project>

@@ -147,6 +147,34 @@ for (const backend of backends) {
       expect(await errorCode(client.request("uia_snapshot", { hwnd: 1 }))).toBe("WINDOW_NOT_FOUND");
     });
 
+    it("reads rendered text with OCR (self test)", async () => {
+      const result = await client.request<{ ok: boolean; text: string; language: string; languages: string[] }>("ocr_selftest");
+      expect(result.ok).toBe(true);
+      expect(result.text).toContain("12345");
+      expect(result.languages.length).toBeGreaterThan(0);
+    });
+
+    it("returns OCR lines and words with screen rects inside the region", async () => {
+      const region = { x: 0, y: 0, w: 300, h: 200 };
+      const result = await client.request<{
+        language: string;
+        lines: Array<{ text: string; rect: number[]; words: Array<{ text: string; rect: number[] }> }>;
+      }>("ocr", region);
+      expect(typeof result.language).toBe("string");
+      for (const line of result.lines) {
+        expect(line.words.length).toBeGreaterThan(0);
+        for (const word of line.words) {
+          expect(word.rect[0]).toBeGreaterThanOrEqual(region.x - 1);
+          expect(word.rect[1]).toBeGreaterThanOrEqual(region.y - 1);
+          expect(word.rect[0] + word.rect[2]).toBeLessThanOrEqual(region.x + region.w + 1);
+        }
+      }
+    });
+
+    it("reports a language without an OCR engine", async () => {
+      expect(await errorCode(client.request("ocr", { x: 0, y: 0, w: 10, h: 10, lang: "xx-XX" }))).toBe("OCR_UNAVAILABLE");
+    });
+
     it("keeps non-ASCII text intact", async () => {
       // Window titles are often Vietnamese; the encoding must survive both hosts.
       const windows = await client.request<Array<{ title: string }>>("list_windows");

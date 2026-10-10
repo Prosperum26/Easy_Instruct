@@ -75,7 +75,8 @@ namespace WinHelper
             };
         }
 
-        private static byte[] Grab(int x, int y, int w, int h, OutputSize size, Action<IntPtr> decorate)
+        /// <summary>Copies a screen region into top-down BGRA pixels of <paramref name="size"/> (shrunk or enlarged).</summary>
+        internal static byte[] Grab(int x, int y, int w, int h, OutputSize size, Action<IntPtr> decorate)
         {
             var screen = Gdi.GetDC(IntPtr.Zero);
             var memory = Gdi.CreateCompatibleDC(screen);
@@ -170,6 +171,8 @@ namespace WinHelper
         public const int HALFTONE = 4;
         public const int PS_DOT = 2;
         public const int OPAQUE = 2;
+        public const int TRANSPARENT = 1;
+        public const uint WHITENESS = 0x00FF0062;
 
         [StructLayout(LayoutKind.Sequential)]
         public struct BITMAPINFOHEADER
@@ -205,6 +208,7 @@ namespace WinHelper
         [DllImport("gdi32.dll")] public static extern uint SetTextColor(IntPtr dc, uint color);
         [DllImport("gdi32.dll")] public static extern uint SetBkColor(IntPtr dc, uint color);
         [DllImport("gdi32.dll")] public static extern int SetBkMode(IntPtr dc, int mode);
+        [DllImport("gdi32.dll")] public static extern bool PatBlt(IntPtr dc, int x, int y, int w, int h, uint rop);
         [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern bool TextOutW(IntPtr dc, int x, int y, string text, int length);
 
         [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
