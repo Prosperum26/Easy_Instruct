@@ -146,6 +146,8 @@ class Run {
     if (within) {
       const part = locateUi(tree, within);
       if ("reason" in part) return part;
+      // A closed view resolves to its activity bar icon; there is nothing to read in there.
+      if (part.detail === "icon") return { reason: "not_visible" };
       area = part.rect;
     }
     const byName = findTextInUia(tree, text, { within: area, occurrence });

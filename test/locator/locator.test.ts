@@ -108,6 +108,12 @@ describe("Locator", () => {
       expect(await locator.locate([{ kind: "text", text: "nothing like this" }], ide)).toEqual([{ reason: "text_not_found" }]);
     });
 
+    it("says the view is closed instead of searching its activity bar icon", async () => {
+      helper.snapshot = searchOpenPanelClosed();
+      expect(await locator.locate([{ kind: "text", text: "app.py", within: "explorer" }], ide)).toEqual([{ reason: "not_visible" }]);
+      expect(helper.callsTo("ocr")).toHaveLength(0);
+    });
+
     it("reports a part to search in that is not on screen", async () => {
       helper.snapshot = searchOpenPanelClosed();
       expect(await locator.locate([{ kind: "text", text: "npm", within: "terminal" }], ide)).toEqual([{ reason: "not_visible" }]);
