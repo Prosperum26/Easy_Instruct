@@ -116,6 +116,37 @@ for (const backend of backends) {
       expect(result).toBe("exited");
     }, 20_000);
 
+    it("snapshots a window's UI Automation tree as a flat list", async () => {
+      const windows = await client.request<Array<{ hwnd: number; minimized: boolean }>>("list_windows");
+      const target = windows.find((w) => !w.minimized);
+      if (!target) return;
+      const snapshot = await client.request<{
+        window: number[];
+        nodes: Array<{ p: number; d: number; t: string; n: string; id: string; c: string; r: number[] | null }>;
+        truncated: boolean;
+        attempts: number;
+      }>("uia_snapshot", { hwnd: target.hwnd, maxNodes: 200 });
+      expect(snapshot.window).toHaveLength(4);
+      expect(snapshot.nodes[0]).toMatchObject({ p: -1, d: 0 });
+      snapshot.nodes.forEach((node, i) => {
+        expect(node).toEqual({
+          p: expect.any(Number),
+          d: expect.any(Number),
+          t: expect.any(String),
+          n: expect.any(String),
+          id: expect.any(String),
+          c: expect.any(String),
+          r: node.r === null ? null : [expect.any(Number), expect.any(Number), expect.any(Number), expect.any(Number)],
+        });
+        if (i > 0) expect(node.p).toBeLessThan(i);
+      });
+      expect(snapshot.nodes.length).toBeLessThanOrEqual(200);
+    });
+
+    it("reports unknown windows for uia_snapshot", async () => {
+      expect(await errorCode(client.request("uia_snapshot", { hwnd: 1 }))).toBe("WINDOW_NOT_FOUND");
+    });
+
     it("keeps non-ASCII text intact", async () => {
       // Window titles are often Vietnamese; the encoding must survive both hosts.
       const windows = await client.request<Array<{ title: string }>>("list_windows");

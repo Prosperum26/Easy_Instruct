@@ -12,7 +12,8 @@ $sources = Get-ChildItem -Path (Join-Path $PSScriptRoot 'src') -Filter '*.cs' |
     ForEach-Object { $_.FullName }
 
 try {
-    Add-Type -Path $sources
+    # WindowsBase holds System.Windows.Rect, used by UI Automation bounding rectangles.
+    Add-Type -Path $sources -ReferencedAssemblies UIAutomationClient, UIAutomationTypes, WindowsBase
 } catch {
     [Console]::Error.WriteLine("win-helper: could not compile the helper: $($_.Exception.Message)")
     exit 2

@@ -26,6 +26,7 @@ namespace WinHelper
             dispatcher.Register("ping", delegate { return new Dictionary<string, object> { { "pong", true } }; });
             WindowCommands.Register(dispatcher);
             CaptureCommands.Register(dispatcher);
+            UiaCommands.Register(dispatcher);
             return dispatcher;
         }
 
