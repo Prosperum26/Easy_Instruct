@@ -20,10 +20,8 @@ export interface OverlayHandle {
   stop(): Promise<void>;
 }
 
-/** What the coordinator needs from win-helper (HelperClient fits). */
-export interface Helper {
-  request<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T>;
-}
+import type { Helper } from "../helper-client/helper.js";
+export type { Helper };
 
 export type ToolErrorCode =
   | "NO_SESSION"

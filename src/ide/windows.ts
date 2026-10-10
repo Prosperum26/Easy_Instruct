@@ -5,6 +5,8 @@ export interface WindowInfo {
   hwnd: number;
   title: string;
   process: string;
+  /** The process executable; "" when Windows does not tell. */
+  path?: string;
   bounds: Rect;
   minimized: boolean;
   foreground: boolean;
