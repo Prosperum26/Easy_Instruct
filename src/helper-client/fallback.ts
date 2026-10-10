@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import type { HelperEvent } from "./helper.js";
 import { HelperClient, HelperError } from "./helper-client.js";
 
 export interface HelperBackend {
@@ -46,6 +47,7 @@ export function helperBackends(dir: string, preference = "auto", parentPid = pro
 export class FallbackHelper {
   private readonly clients: Array<{ name: string; client: HelperClient; answered: boolean }>;
   private index = 0;
+  private readonly eventListeners: Array<(event: HelperEvent) => void> = [];
 
   constructor(backends: HelperBackend[], requestTimeoutMs?: number) {
     this.clients = backends.map((backend) => ({
@@ -53,6 +55,16 @@ export class FallbackHelper {
       client: new HelperClient({ command: backend.command, args: backend.args, requestTimeoutMs }),
       answered: false,
     }));
+    this.clients.forEach((entry, i) =>
+      entry.client.onEvent((event) => {
+        if (i === this.index) this.eventListeners.forEach((listener) => listener(event));
+      }),
+    );
+  }
+
+  /** Events from the backend in use. */
+  onEvent(listener: (event: HelperEvent) => void) {
+    this.eventListeners.push(listener);
   }
 
   get activeBackend(): string | undefined {

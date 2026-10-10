@@ -49,6 +49,14 @@ describe("FallbackHelper", () => {
     expect(helper.activeBackend).toBe("works");
   });
 
+  it("forwards events from the backend in use", async () => {
+    helper = new FallbackHelper([cannotStart, works]);
+    const seen: unknown[] = [];
+    helper.onEvent((e) => seen.push(e));
+    await helper.request("emit", { event: "click", x: 1, y: 2 });
+    expect(seen).toEqual([{ event: "click", x: 1, y: 2 }]);
+  });
+
   it("reports unavailable when every backend fails", async () => {
     helper = new FallbackHelper([cannotStart, diesAtOnce]);
     expect(await errorCode(helper.request("echo"))).toBe("HELPER_UNAVAILABLE");

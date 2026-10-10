@@ -37,6 +37,20 @@ describe("HelperClient", () => {
     await expect(Promise.all([slow, fast])).resolves.toEqual([{ v: "slow" }, { v: "fast" }]);
   });
 
+  it("delivers event lines to every listener without disturbing requests", async () => {
+    start();
+    const seen: unknown[][] = [[], []];
+    client.onEvent((e) => seen[0].push(e));
+    client.onEvent((e) => seen[1].push(e));
+    await expect(client.request("emit", { event: "click", x: 5, y: 6 })).resolves.toEqual({ ok: true });
+    expect(seen).toEqual([[{ event: "click", x: 5, y: 6 }], [{ event: "click", x: 5, y: 6 }]]);
+  });
+
+  it("drops events nobody listens to", async () => {
+    start();
+    await expect(client.request("emit", { event: "click", x: 1, y: 1 })).resolves.toEqual({ ok: true });
+  });
+
   it("ignores lines that are not JSON", async () => {
     start();
     await expect(client.request("garbage")).resolves.toEqual({ ok: true });

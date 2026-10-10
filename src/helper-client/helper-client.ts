@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
+import type { HelperEvent } from "./helper.js";
 
 export type HelperErrorCode = "TIMEOUT" | "HELPER_EXITED" | "HELPER_UNAVAILABLE" | (string & {});
 
@@ -38,6 +39,7 @@ export class HelperClient {
   private child: ChildProcessWithoutNullStreams | null = null;
   private childExited: Promise<void> = Promise.resolve();
   private readonly pending = new Map<number, Pending>();
+  private readonly eventListeners: Array<(event: HelperEvent) => void> = [];
   private nextId = 1;
   private starts = 0;
   private unavailable: string | null = null;
@@ -66,6 +68,10 @@ export class HelperClient {
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
       child.stdin.write(`${JSON.stringify({ id, cmd, args })}\n`);
     });
+  }
+
+  onEvent(listener: (event: HelperEvent) => void) {
+    this.eventListeners.push(listener);
   }
 
   /**
@@ -132,10 +138,14 @@ export class HelperClient {
   }
 
   private handleLine(line: string) {
-    let response: { id?: number; ok?: boolean; result?: unknown; error?: { code: string; message: string } };
+    let response: { id?: number; ok?: boolean; result?: unknown; error?: { code: string; message: string }; event?: unknown };
     try {
       response = JSON.parse(line);
     } catch {
+      return;
+    }
+    if (response.id === undefined && typeof response.event === "string") {
+      this.eventListeners.forEach((listener) => listener(response as HelperEvent));
       return;
     }
     const pending = typeof response.id === "number" ? this.pending.get(response.id) : undefined;

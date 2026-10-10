@@ -6,6 +6,7 @@
 //   die            -> exits with code 1 without answering
 //   garbage        -> prints a non-JSON line, then answers {ok: true}
 //   pid            -> result = process.pid
+//   emit {event..} -> prints the event line (no id), then answers {ok: true}
 // FAKE_HELPER_IGNORE_EOF=1 keeps running after stdin closes (like a helper whose pipe was inherited).
 import readline from "node:readline";
 
@@ -32,6 +33,9 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       return reply(id, { ok: true });
     case "pid":
       return reply(id, process.pid);
+    case "emit":
+      process.stdout.write(JSON.stringify(args) + "\n");
+      return reply(id, { ok: true });
     default:
       return fail(id, "UNKNOWN_COMMAND", cmd);
   }
