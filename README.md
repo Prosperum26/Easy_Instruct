@@ -97,7 +97,7 @@ Vùng lấn ra ngoài màn hình được cắt bớt; vùng nằm hẳn ngoài 
 - **M4** ✅ Tự định vị: phần giao diện VS Code (UI Automation), chữ (tên UIA hoặc OCR), dòng code (`open_location` + OCR số dòng); `verify` kèm ảnh preview.
 - **M5** ✅ Bước `click` tự hoàn tất khi người dùng click trúng vùng sáng; vùng sáng đi theo cửa sổ VS Code khi nó di chuyển/đổi kích thước; overlay ẩn khi bạn sang app khác và hiện lại khi quay về; `Ctrl+Alt+R` định vị lại.
 - **M5.5** ✅ Bộ skill `easy-instruct` + MCP instructions/resources/prompts + Claude Code plugin + bộ eval.
-- **M6** ⏳ Repo mẫu, đóng gói phát hành (npm / plugin từ GitHub).
+- **M6** ✅ `easy-instruct doctor` kiểm tra máy; `npm install` tự build; cài plugin từ bản clone; cấu hình cho các agent khác.
 
 ### Trong lúc học
 
@@ -106,14 +106,70 @@ Vùng lấn ra ngoài màn hình được cắt bớt; vùng nằm hẳn ngoài 
 - **Sang app khác** (hoặc thu nhỏ VS Code): overlay tự ẩn, quay lại VS Code là hiện lại. Khi AI đưa ra bước mới, VS Code được đưa lên trước.
 - **Đã cuộn editor hoặc đổi tab** mà vùng sáng lệch: bấm `Ctrl+Alt+R`.
 
-## Chạy thử
+## Cài đặt
+
+Repo đang private nên cài từ bản clone. `npm install` tải Electron và build luôn (server, overlay, win-helper):
 
 ```bash
+git clone https://github.com/Prosperum26/Easy_Instruct.git
+cd Easy_Instruct
 npm install
+npm run doctor           # kiểm tra máy: helper, OCR, VS Code, overlay
+```
+
+`doctor` in từng mục `[ ok ]` / `[warn]` / `[FAIL]` kèm cách sửa, và thoát với mã 1 nếu có mục chặn bài học. `--json` cho agent đọc, `--no-overlay` để không bật Electron. `[warn] win-helper.exe` là bình thường khi Smart App Control bật: helper PowerShell chạy thay.
+
+### Dùng với Claude Code (plugin: MCP server + skill)
+
+```bash
+claude plugin marketplace add <đường dẫn tới bản clone>
+claude plugin install easy-instruct@easy-instruct
+```
+
+Mở phiên Claude Code mới (CLI hoặc extension VS Code) rồi nói kiểu "dạy mình repo này": skill `easy-instruct` cho Claude biết cách soạn bài, chọn vùng sáng và xử lý lỗi; MCP server mở overlay. Plugin chạy ngay trong thư mục clone, nên sau `git pull` / `npm run build` chỉ cần mở phiên mới (hoặc `/reload-plugins`). Gỡ: `claude plugin uninstall easy-instruct@easy-instruct`.
+
+### Dùng với agent khác
+
+Server là `node <clone>/dist/server/index.js` (stdio). Agent không có skill vẫn nhận đủ hướng dẫn: tóm tắt lúc kết nối (MCP `instructions`), toàn bộ skill ở resources `easy-instruct://guide/...`, và prompts `explore_repo`, `explain_file`, `run_project`. Thay `C:/path/to/Easy_Instruct` bằng chỗ bạn clone:
+
+**Cursor** (`~/.cursor/mcp.json`) và **Claude Desktop** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "easy-instruct": { "command": "node", "args": ["C:/path/to/Easy_Instruct/dist/server/index.js"] }
+  }
+}
+```
+
+**VS Code Copilot** (`.vscode/mcp.json` hoặc lệnh *MCP: Open User Configuration*):
+
+```json
+{
+  "servers": {
+    "easy-instruct": { "type": "stdio", "command": "node", "args": ["C:/path/to/Easy_Instruct/dist/server/index.js"] }
+  }
+}
+```
+
+**Codex** (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.easy-instruct]
+command = "node"
+args = ["C:/path/to/Easy_Instruct/dist/server/index.js"]
+```
+
+**Claude Code không dùng plugin** (chỉ MCP, không có skill): `claude mcp add -s user easy-instruct -- node C:/path/to/Easy_Instruct/dist/server/index.js`.
+
+## Phát triển
+
+```bash
 npm run build
 npm test                 # unit + contract test (Node)
 npm run test:helper      # test C# của win-helper (cần .NET SDK)
 npm run typecheck
+npm run doctor
 npm run overlay:demo     # demo các bước (đọc / click / thực hành / nhiều vùng sáng)
 npm run overlay:demo -- --step=4              # mở thẳng bước 4
 npm run overlay:demo -- --rect=100,200,600,80 # tô sáng đúng tọa độ pixel vật lý để kiểm tra DPI
@@ -121,28 +177,12 @@ npm run overlay:demo -- --rect=100,200,600,80 # tô sáng đúng tọa độ pix
 
 Phím tắt: `Ctrl+Alt+H` ẩn/hiện lớp phủ, `Ctrl+Alt+R` định vị lại vùng sáng, `Ctrl+Alt+Q` thoát. Đặt `EASY_INSTRUCT_DEBUG=1` để xem log; thêm `--capture=out.png` để overlay tự chụp phần nó vẽ rồi thoát.
 
-### Dùng với Claude Code (plugin: MCP server + skill)
-
-Repo này là một Claude Code plugin kèm marketplace riêng. Build trước (plugin chạy `dist/` tại chỗ):
-
-```bash
-npm install && npm run build
-claude plugin marketplace add C:/Dev/Project/Easy_Instruct
-claude plugin install easy-instruct@easy-instruct
-```
-
-Mở phiên Claude Code mới rồi nói kiểu "dạy mình repo này": skill `easy-instruct` cho Claude biết cách soạn bài, chọn vùng sáng và xử lý lỗi; MCP server mở overlay. Gỡ: `claude plugin uninstall easy-instruct@easy-instruct`.
-
-### Dùng với agent khác (Cursor, Copilot, …)
-
-Thêm MCP server `node <repo>/dist/server/index.js` theo cách của agent đó. Không cần skill: server gửi hướng dẫn tóm tắt lúc kết nối (MCP `instructions`), toàn bộ skill có ở resources `easy-instruct://guide/...`, và có sẵn prompts `explore_repo`, `explain_file`, `run_project`.
-
 ### Kiểm thử hành vi của agent
 
 `evals/` chạy các kịch bản (dạy repo, lệnh bị lỗi, câu hỏi ngắn không nên mở overlay) với MCP giả lập. Mỗi lần chạy là lời gọi model thật, tính vào usage:
 
 ```bash
-claude plugin eval . --scaffold
+claude plugin eval . --scaffold --max-cost-usd 5
 ```
 
 `test/guide/skill.test.ts` (chạy trong `npm test`) bảo đảm skill nhắc tới mọi mã lỗi, lý do `unresolved`, event và phần UI mà code có.
@@ -156,6 +196,6 @@ Windows 11 có thể bật **Smart App Control**, chặn `win-helper.exe` vì fi
 - Windows 10/11
 - Node.js ≥ 20
 - Windows PowerShell 5.1 (có sẵn trong Windows) cho win-helper
-- Tuỳ chọn: .NET 10 SDK để build `win-helper.exe` và chạy test C#
+- Tuỳ chọn: .NET 10 SDK để build `win-helper.exe` và chạy test C# (không có thì `npm install` bỏ qua exe, dùng helper PowerShell)
 - VS Code (không cần lệnh `code` trong PATH: server tự tìm CLI cạnh `Code.exe`)
 - OCR của Windows (có sẵn; máy chỉ có gói tiếng Anh thì chữ tiếng Việt được tìm qua tên UI Automation, OCR dùng cho số dòng, tên file, chữ không dấu)

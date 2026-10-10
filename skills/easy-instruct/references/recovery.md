@@ -30,9 +30,9 @@ card. So a failure is never a dead end for the user, but you should notice it an
 |---|---|---|
 | `NO_SESSION` | No lesson is running (never started, ended, or the user quit) | If the user quit, respect it. Otherwise `start_session` |
 | `SESSION_ACTIVE` | A lesson is already running | Continue it, or `end_session` first |
-| `LAUNCH_FAILED` | The overlay could not start | Tell the user; teach in the chat instead |
+| `LAUNCH_FAILED` | The overlay could not start | Tell the user; teach in the chat instead. Suggest `npm run doctor` in the Easy Instruct folder: it says what is missing and how to fix it |
 | `WAIT_IN_PROGRESS` | Another `wait_for_user` is still waiting | Only one wait at a time; let the first one return |
-| `HELPER_UNAVAILABLE` | The Windows helper could not run (neither the exe nor the PowerShell host) | `observe` and smart targets are unavailable; use cards and plain directions |
+| `HELPER_UNAVAILABLE` | The Windows helper could not run (neither the exe nor the PowerShell host) | `observe` and smart targets are unavailable; use cards and plain directions. `npm run doctor` in the Easy Instruct folder shows why |
 | `CAPTURE_FAILED` | The screen could not be captured | Try `observe` again; the screen may be locked |
 | `BAD_REGION` | The `observe` region is outside the screen | Use `"ide"`, `"screen"` or a region inside the screen |
 | `FILE_NOT_FOUND` | `open_location` file does not exist | Fix the path (absolute or relative to `workspace`) |
