@@ -176,6 +176,12 @@ for (const backend of backends) {
       expect(await errorCode(client.request("ocr", { x: 0, y: 0, w: 10, h: 10, lang: "xx-XX" }))).toBe("OCR_UNAVAILABLE");
     });
 
+    it("turns click watching on and off", async () => {
+      await expect(client.request("watch_clicks", { enabled: true })).resolves.toEqual({ watching: true });
+      await expect(client.request("watch_clicks", { enabled: false })).resolves.toEqual({ watching: false });
+      expect(await errorCode(client.request("watch_clicks", {}))).toBe("BAD_ARGS");
+    });
+
     it("keeps non-ASCII text intact", async () => {
       // Window titles are often Vietnamese; the encoding must survive both hosts.
       const windows = await client.request<Array<{ title: string }>>("list_windows");

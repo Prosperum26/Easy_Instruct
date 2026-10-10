@@ -28,6 +28,7 @@ namespace WinHelper
             CaptureCommands.Register(dispatcher);
             UiaCommands.Register(dispatcher);
             OcrCommands.Register(dispatcher);
+            ClickWatcher.Register(dispatcher);
             return dispatcher;
         }
 
@@ -80,12 +81,16 @@ namespace WinHelper
         public static void Run(TextReader input, TextWriter output)
         {
             var dispatcher = CreateDispatcher();
+            var hostOutput = new HostOutput(output);
+            ClickWatcher.Emit = hostOutput.Event;
             string line;
             while ((line = input.ReadLine()) != null)
             {
                 if (line.Trim().Length == 0) continue;
-                output.WriteLine(dispatcher.HandleLine(line));
+                hostOutput.Response(dispatcher.HandleLine(line));
             }
+            ClickWatcher.Stop();
+            ClickWatcher.Emit = null;
         }
     }
 }
