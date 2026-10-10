@@ -85,7 +85,14 @@ export class HelperClient {
     }
     this.starts++;
 
-    const child = spawn(this.options.command, this.options.args, { stdio: "pipe", windowsHide: true });
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(this.options.command, this.options.args, { stdio: "pipe", windowsHide: true });
+    } catch (error) {
+      // Some failures (e.g. blocked by Windows App Control, invalid paths) throw instead of emitting "error".
+      this.unavailable = `win-helper could not start: ${(error as Error).message}`;
+      throw new HelperError("HELPER_UNAVAILABLE", this.unavailable);
+    }
     this.child = child;
     child.stdin.on("error", () => {});
     child.stderr.on("data", (chunk) => {

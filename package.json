@@ -10,7 +10,8 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc",
     "test": "vitest run",
-    "overlay:demo": "npm run build && electron dist/overlay/main.cjs"
+    "overlay:demo": "npm run build && electron dist/overlay/main.cjs",
+    "test:helper": "dotnet test native/win-helper"
   },
   "engines": {
     "node": ">=20"

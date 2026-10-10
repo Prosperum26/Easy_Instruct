@@ -1,4 +1,5 @@
 import { build } from "esbuild";
+import { execFileSync } from "node:child_process";
 import { copyFile, mkdir } from "node:fs/promises";
 
 const outdir = "dist/overlay";
@@ -43,3 +44,23 @@ await Promise.all(
 );
 
 console.log("Built server into dist/server and overlay into", outdir);
+
+// win-helper (.NET 10). Framework-dependent publish: needs the .NET 10 runtime where it runs.
+const dotnet = [process.env.DOTNET ?? "dotnet", "C:/Program Files/dotnet/dotnet.exe"].find((candidate) => {
+  try {
+    execFileSync(candidate, ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+});
+if (!dotnet) {
+  console.warn("dotnet not found: skipping win-helper (observe and VS Code focus will be unavailable).");
+} else {
+  execFileSync(
+    dotnet,
+    ["publish", "native/win-helper/src/WinHelper.csproj", "-c", "Release", "-o", "dist/win-helper", "--nologo", "-v", "quiet"],
+    { stdio: "inherit", env: { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: "1", DOTNET_NOLOGO: "1" } },
+  );
+  console.log("Built win-helper into dist/win-helper");
+}

@@ -68,6 +68,11 @@ describe("HelperClient", () => {
     expect(await errorCode(client.request("echo"))).toBe("HELPER_UNAVAILABLE");
   });
 
+  it("reports spawn failures that throw synchronously as unavailable", async () => {
+    client = new HelperClient({ command: "bad\0path.exe", args: [], requestTimeoutMs: 2000 });
+    expect(await errorCode(client.request("echo"))).toBe("HELPER_UNAVAILABLE");
+  });
+
   it("rejects requests after close", async () => {
     start();
     client.close();
