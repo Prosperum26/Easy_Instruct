@@ -28,6 +28,7 @@ export interface Overlay {
   onReady(listener: () => void): void;
   onDisplayChanged(listener: (display: DisplayInfo) => void): void;
   onQuitShortcut(listener: () => void): void;
+  onRelocateShortcut(listener: () => void): void;
 }
 
 /**
@@ -69,6 +70,7 @@ export function createOverlay(): Overlay {
   const eventListeners: Array<(message: OverlayToServer) => void> = [];
   const displayListeners: Array<(display: DisplayInfo) => void> = [];
   const quitListeners: Array<() => void> = [];
+  const relocateListeners: Array<() => void> = [];
 
   const send = (message: ServerToOverlay) => window.webContents.send("overlay:message", message, display);
 
@@ -120,6 +122,7 @@ export function createOverlay(): Overlay {
     }
   });
   globalShortcut.register("Control+Alt+Q", () => quitListeners.forEach((listener) => listener()));
+  globalShortcut.register("Control+Alt+R", () => relocateListeners.forEach((listener) => listener()));
 
   return {
     window,
@@ -141,5 +144,6 @@ export function createOverlay(): Overlay {
     },
     onDisplayChanged: (listener) => displayListeners.push(listener),
     onQuitShortcut: (listener) => quitListeners.push(listener),
+    onRelocateShortcut: (listener) => relocateListeners.push(listener),
   };
 }

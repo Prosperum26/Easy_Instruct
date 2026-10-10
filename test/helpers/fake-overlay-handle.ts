@@ -48,6 +48,11 @@ export class FakeOverlayHandle implements OverlayHandle {
     this.emit({ type: "ask", stepId, question });
   }
 
+  /** The user pressed Ctrl+Alt+R. */
+  relocate() {
+    this.emit({ type: "relocate" });
+  }
+
   /** The ask form closed and gave keyboard focus back. */
   release() {
     this.emit({ type: "focus_released" });

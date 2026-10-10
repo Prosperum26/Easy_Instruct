@@ -711,6 +711,21 @@ describe("Coordinator watching the IDE window", () => {
     expect(result.resolved).toHaveLength(1);
   });
 
+  it("finds described targets again on Ctrl+Alt+R, e.g. after the user scrolled", async () => {
+    helper.ocr = () => [];
+    await coordinator.showStep({
+      title: "A",
+      body: "b",
+      mode: "read",
+      targets: [{ kind: "ui", element: "terminal" }, { kind: "lines", file: "app.py", start: 3 }],
+    });
+    helper.snapshot = shifted(explorerAndTerminal(), 0, -100);
+    overlay.relocate();
+    await coordinator.idle();
+    expect(overlay.lastRender().highlights).toEqual([{ x: 714, y: 442, w: 1200, h: 417 }]);
+    expect(opened).toBe(1);
+  });
+
   it("stops watching when the lesson ends", async () => {
     overlay.press("exit");
     await coordinator.idle();

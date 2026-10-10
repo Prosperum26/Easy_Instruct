@@ -37,4 +37,6 @@ export type OverlayToServer =
   | { type: "button"; stepId: string; button: ButtonId }
   | { type: "ask"; stepId: string; question: string }
   /** The ask form closed; keyboard focus should go back to the app the user was in. */
-  | { type: "focus_released" };
+  | { type: "focus_released" }
+  /** Ctrl+Alt+R: find the step's targets again, e.g. after the user scrolled. */
+  | { type: "relocate" };

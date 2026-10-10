@@ -684,6 +684,11 @@ export class Coordinator {
     handle.connection.onMessage((message) => {
       if (this.overlay !== handle || !this.session) return;
       if (message.type === "focus_released") return this.inBackground(() => this.focusIde());
+      if (message.type === "relocate") {
+        const stepId = this.session.currentRender()?.stepId;
+        if (stepId) this.inBackground(() => this.relocate(stepId));
+        return;
+      }
       this.apply(this.session.handleOverlay(message));
       this.waiter?.notify();
     });

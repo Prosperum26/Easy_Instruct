@@ -47,6 +47,7 @@ export function runConnected(overlay: Overlay, { port, token }: { port: number; 
 
   overlay.onEvent(send);
   overlay.onDisplayChanged((display) => send({ type: "display", display }));
+  overlay.onRelocateShortcut(() => send({ type: "relocate" }));
   overlay.onQuitShortcut(() => {
     const stepId = overlay.currentStepId();
     if (stepId) send({ type: "button", stepId, button: "exit" });
