@@ -37,7 +37,7 @@ Dạy người dùng **khám phá và đọc hiểu một repo vừa clone** tro
 ```
 AI Agent ──MCP stdio──▶ MCP Server (TypeScript) ──WebSocket──▶ Overlay (Electron)
                               │
-                              └──JSON-lines──▶ win-helper (.NET 8: UI Automation, OCR, chụp màn hình)
+                              └──JSON-lines──▶ win-helper (.NET 10: UI Automation, OCR, chụp màn hình)
 ```
 
 | Thư mục | Vai trò |
@@ -74,5 +74,5 @@ AI Agent ──MCP stdio──▶ MCP Server (TypeScript) ──WebSocket──�
 
 - Windows 10/11
 - Node.js ≥ 20
-- .NET 8 SDK (để build win-helper)
+- .NET 10 SDK (để build win-helper)
 - VS Code có lệnh `code` trong PATH
