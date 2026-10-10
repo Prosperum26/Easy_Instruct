@@ -14,6 +14,10 @@ const api = {
   setInteractive(interactive: boolean) {
     ipcRenderer.send("overlay:interactive", interactive);
   },
+  /** true while the user types a question, so the window can take keyboard focus. */
+  setFocusable(focusable: boolean) {
+    ipcRenderer.send("overlay:focusable", focusable);
+  },
   ready() {
     ipcRenderer.send("overlay:ready");
   },

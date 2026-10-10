@@ -204,3 +204,57 @@ body {
   color: var(--bubble-muted);
   font-size: 12px;
 }
+
+/* Elements toggled with the hidden attribute (the bubble itself is only made invisible so it can be measured). */
+:not(.bubble)[hidden] {
+  display: none !important;
+}
+
+.ask textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--bubble-fg);
+  background: var(--code-bg);
+  border: 1px solid var(--button-hover);
+  border-radius: 6px;
+  padding: 8px;
+  outline: none;
+  user-select: text;
+}
+
+.ask textarea:focus {
+  border-color: var(--accent);
+}
+
+.ask-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ask-actions button {
+  font: inherit;
+  font-size: 13px;
+  color: var(--bubble-fg);
+  background: var(--button-bg);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.ask-actions button.primary {
+  background: var(--accent);
+  color: #1b1b1b;
+  font-weight: 600;
+}
+
+.ask-note {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 12px;
+}

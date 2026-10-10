@@ -28,6 +28,10 @@ const ctx = canvas.getContext("2d")!;
 const highlightLayer = document.getElementById("highlights")!;
 const bubble = document.getElementById("bubble")!;
 const statusPill = document.getElementById("status")!;
+const buttonRow = bubble.querySelector<HTMLElement>(".buttons")!;
+const askForm = bubble.querySelector<HTMLFormElement>(".ask")!;
+const askInput = askForm.querySelector("textarea")!;
+const askNote = bubble.querySelector<HTMLElement>(".ask-note")!;
 
 let currentRects: Rect[] = [];
 let animationFrame = 0;
@@ -89,24 +93,40 @@ function renderStep(step: RenderMessage, display: DisplayInfo) {
 }
 
 function renderBubble(step: RenderMessage, highlights: Rect[]) {
+  closeAsk();
+  askNote.hidden = true;
   bubble.querySelector(".label")!.textContent = step.label ?? "";
   bubble.querySelector(".title")!.textContent = step.title;
   bubble.querySelector(".body")!.innerHTML = renderMarkdown(step.bodyMd);
   bubble.classList.toggle("card", step.kind === "card");
 
-  const buttons = bubble.querySelector(".buttons")!;
-  buttons.replaceChildren(
+  buttonRow.replaceChildren(
     ...step.buttons.map((id) => {
       const button = document.createElement("button");
       button.textContent = BUTTON_LABELS[id];
       button.classList.toggle("primary", PRIMARY_BUTTONS.has(id));
       button.classList.toggle("left", id === "back" || id === "exit");
-      button.addEventListener("click", () => api.send({ type: "button", stepId: step.stepId, button: id }));
+      button.addEventListener("click", () =>
+        id === "ask" ? openAsk(step.stepId) : api.send({ type: "button", stepId: step.stepId, button: id }),
+      );
       return button;
     }),
   );
 
-  const target = step.kind === "card" ? null : union(highlights);
+  bubbleTarget = step.kind === "card" ? null : union(highlights);
+  bubbleHighlights = highlights;
+  positionBubble();
+  bubble.hidden = false;
+  bubbleShown = true;
+}
+
+let bubbleTarget: Rect | null = null;
+let bubbleHighlights: Rect[] = [];
+
+/** Places the bubble for its current content size; called again when the ask form opens or closes. */
+function positionBubble() {
+  const target = bubbleTarget;
+  const highlights = bubbleHighlights;
   const size = { w: bubble.offsetWidth, h: bubble.offsetHeight };
   const viewport = { w: window.innerWidth, h: window.innerHeight };
   const placement = placeBubble(target, highlights, size, viewport, { gap: 16, margin: 12 });
@@ -121,10 +141,56 @@ function renderBubble(step: RenderMessage, highlights: Rect[]) {
   const vertical = placement.side === "left" || placement.side === "right";
   arrow.style.top = vertical ? `${placement.arrowOffset - ARROW_HALF}px` : "";
   arrow.style.left = vertical ? "" : `${placement.arrowOffset - ARROW_HALF}px`;
-
-  bubble.hidden = false;
-  bubbleShown = true;
 }
+
+// --- Asking a question: the only time the overlay takes keyboard focus. ---
+
+let askingStepId: string | null = null;
+
+function openAsk(stepId: string) {
+  askingStepId = stepId;
+  askNote.hidden = true;
+  buttonRow.hidden = true;
+  askForm.hidden = false;
+  askInput.value = "";
+  positionBubble();
+  api.setFocusable(true);
+  askInput.focus();
+}
+
+function closeAsk() {
+  if (askingStepId === null) return;
+  askingStepId = null;
+  askForm.hidden = true;
+  buttonRow.hidden = false;
+  positionBubble();
+  api.setFocusable(false);
+  // Focus handling re-enabled the mouse; restore click-through for where the cursor is now.
+  api.setInteractive(interactive);
+}
+
+function submitAsk() {
+  const question = askInput.value.trim();
+  if (!question || askingStepId === null) return;
+  api.send({ type: "ask", stepId: askingStepId, question });
+  closeAsk();
+  askNote.hidden = false;
+  positionBubble();
+}
+
+askForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  submitAsk();
+});
+askInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    submitAsk();
+  } else if (event.key === "Escape") {
+    closeAsk();
+  }
+});
+askForm.querySelector(".cancel")!.addEventListener("click", closeAsk);
 
 // The window ignores the mouse except over the bubble, so clicks reach the IDE underneath.
 document.addEventListener("mousemove", (event) => {
