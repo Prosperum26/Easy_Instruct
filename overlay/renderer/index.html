@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
+    <title>Easy Instruct</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <canvas id="dim"></canvas>
+    <div id="highlights"></div>
+    <div id="bubble" class="bubble" hidden>
+      <div class="arrow"></div>
+      <div class="bubble-header">
+        <span class="label"></span>
+        <span class="title"></span>
+      </div>
+      <div class="body"></div>
+      <div class="buttons"></div>
+    </div>
+    <div id="status" hidden></div>
+    <script src="renderer.js"></script>
+  </body>
+</html>

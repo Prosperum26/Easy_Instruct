@@ -7,8 +7,10 @@
     "easy-instruct": "dist/server/index.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "overlay:demo": "npm run build && electron dist/overlay/main.cjs"
   },
   "engines": {
     "node": ">=20"
@@ -17,5 +19,12 @@
     "win32"
   ],
   "license": "UNLICENSED",
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "electron": "^44.7.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
 }

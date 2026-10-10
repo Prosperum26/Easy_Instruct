@@ -68,7 +68,20 @@ AI Agent ──MCP stdio──▶ MCP Server (TypeScript) ──WebSocket──�
 
 ## Trạng thái
 
-🚧 Đang ở giai đoạn khởi tạo, chưa có code chạy được.
+🚧 Đang phát triển. Đã xong **M1**: overlay Electron vẽ lớp mờ, vùng sáng và bong bóng từ tọa độ cố định.
+
+## Chạy thử
+
+```bash
+npm install
+npm test                 # unit test
+npm run typecheck
+npm run overlay:demo     # demo các bước (đọc / click / thực hành / nhiều vùng sáng)
+npm run overlay:demo -- --step=4              # mở thẳng bước 4
+npm run overlay:demo -- --rect=100,200,600,80 # tô sáng đúng tọa độ pixel vật lý để kiểm tra DPI
+```
+
+Phím tắt: `Ctrl+Alt+H` ẩn/hiện lớp phủ, `Ctrl+Alt+Q` thoát. Đặt `EASY_INSTRUCT_DEBUG=1` để xem log; thêm `--capture=out.png` để overlay tự chụp phần nó vẽ rồi thoát.
 
 ## Yêu cầu (dự kiến)
 
