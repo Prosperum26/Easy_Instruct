@@ -1,0 +1,25 @@
+# Dependencies & build output
+node_modules/
+dist/
+out/
+
+# .NET helper build output
+native/win-helper/bin/
+native/win-helper/obj/
+
+# Design docs are kept local, not committed
+docs/
+
+# Logs & debug captures
+*.log
+.easy-instruct-debug/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*

@@ -1,0 +1,21 @@
+{
+  "name": "easy-instruct",
+  "version": "0.0.0",
+  "description": "MCP server that lets AI agents teach users step by step with a full-screen spotlight overlay.",
+  "type": "module",
+  "bin": {
+    "easy-instruct": "dist/server/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "win32"
+  ],
+  "license": "UNLICENSED",
+  "private": true
+}
