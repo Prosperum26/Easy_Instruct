@@ -37,7 +37,9 @@ Dạy người dùng **khám phá và đọc hiểu một repo vừa clone** tro
 ```
 AI Agent ──MCP stdio──▶ MCP Server (TypeScript) ──WebSocket──▶ Overlay (Electron)
                               │
-                              └──JSON-lines──▶ win-helper (.NET 10: UI Automation, OCR, chụp màn hình)
+                              └──JSON-lines──▶ win-helper (C#: tìm cửa sổ, chụp màn hình, focus)
+                                                 ├─ win-helper.exe (.NET 10), hoặc
+                                                 └─ host.ps1 (cùng mã C#, biên dịch bởi Windows PowerShell)
 ```
 
 | Thư mục | Vai trò |
@@ -50,7 +52,7 @@ AI Agent ──MCP stdio──▶ MCP Server (TypeScript) ──WebSocket──�
 | `src/helper-client` | Client giao tiếp với win-helper |
 | `src/shared` | Kiểu dữ liệu, chuyển đổi tọa độ/DPI |
 | `overlay/` | Ứng dụng Electron vẽ lớp phủ |
-| `native/win-helper/` | Tiến trình .NET gọi API Windows |
+| `native/win-helper/` | Mã C# gọi API Windows, chạy dạng exe .NET 10 hoặc qua PowerShell |
 | `prompts/` | Hướng dẫn sư phạm cho agent |
 | `config/` | Bảng ánh xạ UI của VS Code |
 
@@ -63,10 +65,15 @@ AI Agent ──MCP stdio──▶ MCP Server (TypeScript) ──WebSocket──�
 | `show_card` | Hiện thẻ ở giữa màn hình | M2 |
 | `wait_for_user` | Chờ người dùng: Tiếp, Xong, Bỏ qua, Hỏi, Thoát (hoặc timeout) | M2 |
 | `end_session` | Thẻ tổng kết, tắt overlay khi người dùng đóng | M2 |
-| `observe` | Chụp cửa sổ IDE (có thể kèm lưới tọa độ) gửi cho agent | M3 |
+| `observe` | Chụp cửa sổ VS Code / toàn màn hình / một vùng, kèm lưới tọa độ, gửi ảnh cho agent | M3 |
 | `open_location` | Mở file đúng dòng trong IDE | M4 |
 
-Ở M2, vùng sáng nhận tọa độ `{ kind: "rect", x, y, w, h }` theo pixel vật lý của màn hình chính; vùng lấn ra ngoài màn hình được cắt bớt, vùng nằm hẳn ngoài màn hình được báo trong `unresolved` và bước được hiện dạng thẻ.
+Vùng sáng nhận `{ kind: "rect", x, y, w, h }`:
+
+- `space: "screen"` (mặc định): pixel vật lý của màn hình chính, đọc thẳng từ nhãn lưới trên ảnh `observe`.
+- `space: "screenshot"` + `screenshot_id`: pixel trên ảnh `observe` (đã thu nhỏ); server tự quy đổi.
+
+Vùng lấn ra ngoài màn hình được cắt bớt; vùng nằm hẳn ngoài màn hình hoặc ảnh không còn trong bộ nhớ được báo trong `unresolved` và bước được hiện dạng thẻ. Overlay không bao giờ xuất hiện trong ảnh chụp (content protection), nên cũng không hiện khi quay/chia sẻ màn hình.
 
 ## Trạng thái
 
@@ -74,14 +81,16 @@ AI Agent ──MCP stdio──▶ MCP Server (TypeScript) ──WebSocket──�
 
 - **M1** ✅ Overlay Electron: lớp mờ, vùng sáng, bong bóng.
 - **M2** ✅ MCP server: session, Lùi/Tiếp cục bộ, hỏi đáp, kênh WebSocket tới overlay, tự khởi động lại overlay khi crash.
-- **M3** ⏳ Chụp màn hình cho agent, tìm cửa sổ VS Code, DPI (win-helper .NET).
+- **M3** ✅ `observe` cho agent, tìm cửa sổ VS Code theo workspace, trả focus về VS Code sau khi hỏi, win-helper chạy được cả khi Smart App Control bật.
+- **M4** ⏳ Tự định vị: panel (UI Automation), chữ (OCR), dòng code (`open_location` + OCR số dòng).
 
 ## Chạy thử
 
 ```bash
 npm install
 npm run build
-npm test                 # unit test
+npm test                 # unit + contract test (Node)
+npm run test:helper      # test C# của win-helper (cần .NET SDK)
 npm run typecheck
 npm run overlay:demo     # demo các bước (đọc / click / thực hành / nhiều vùng sáng)
 npm run overlay:demo -- --step=4              # mở thẳng bước 4
@@ -99,9 +108,14 @@ claude mcp add easy-instruct -- node C:/Dev/Project/Easy_Instruct/dist/server/in
 
 Sau đó nhờ Claude dạy bạn một repo; Claude sẽ gọi `start_session`, `show_step`, `wait_for_user`… và overlay hiện trên màn hình.
 
-## Yêu cầu (dự kiến)
+### win-helper và Smart App Control
+
+Windows 11 có thể bật **Smart App Control**, chặn `win-helper.exe` vì file chưa được ký số. Server tự xử lý: thử exe trước, nếu không chạy được thì dùng `host.ps1` (cùng mã C#, chạy trong `powershell.exe` đã được Microsoft ký). Ép một cách cụ thể bằng `EASY_INSTRUCT_HELPER=dotnet` hoặc `EASY_INSTRUCT_HELPER=powershell`. Về lâu dài, ký số exe là cách chuẩn khi phát hành.
+
+## Yêu cầu
 
 - Windows 10/11
 - Node.js ≥ 20
-- .NET 10 SDK (để build win-helper)
-- VS Code có lệnh `code` trong PATH
+- Windows PowerShell 5.1 (có sẵn trong Windows) cho win-helper
+- Tuỳ chọn: .NET 10 SDK để build `win-helper.exe` và chạy test C#
+- VS Code (lệnh `code` trong PATH sẽ cần từ M4)
