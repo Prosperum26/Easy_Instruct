@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { clipToBounds, type Rect } from "../shared/geometry.js";
+import { HelperError } from "../helper-client/helper-client.js";
+import { chooseIdeWindow, type WindowInfo } from "../ide/windows.js";
+import { ScreenshotStore, screenshotToScreen } from "../observer/screenshots.js";
+import { clipToBounds, type Point, type Rect } from "../shared/geometry.js";
 import type { ButtonId, DisplayInfo, OverlayToServer, ServerToOverlay, StepMode } from "../shared/protocol.js";
 import { Session, type Effects, type StepInput } from "../session/session.js";
 import { EventWaiter, WaitInProgressError } from "../session/waiter.js";
@@ -17,7 +20,19 @@ export interface OverlayHandle {
   stop(): Promise<void>;
 }
 
-export type ToolErrorCode = "NO_SESSION" | "SESSION_ACTIVE" | "LAUNCH_FAILED" | "WAIT_IN_PROGRESS";
+/** What the coordinator needs from win-helper (HelperClient fits). */
+export interface Helper {
+  request<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T>;
+}
+
+export type ToolErrorCode =
+  | "NO_SESSION"
+  | "SESSION_ACTIVE"
+  | "LAUNCH_FAILED"
+  | "WAIT_IN_PROGRESS"
+  | "HELPER_UNAVAILABLE"
+  | "CAPTURE_FAILED"
+  | "BAD_REGION";
 
 export class ToolError extends Error {
   constructor(
@@ -28,7 +43,18 @@ export class ToolError extends Error {
   }
 }
 
-export type Target = { kind: "rect"; x: number; y: number; w: number; h: number } | { kind: "none" };
+export type Target =
+  | {
+      kind: "rect";
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      /** "screen" (default): physical screen pixels. "screenshot": pixels of the image with screenshotId. */
+      space?: "screen" | "screenshot";
+      screenshotId?: string;
+    }
+  | { kind: "none" };
 
 export interface ResolvedTarget {
   rect: Rect;
@@ -38,7 +64,31 @@ export interface ResolvedTarget {
 
 export interface UnresolvedTarget {
   target: Target;
-  reason: "off_screen";
+  reason: "off_screen" | "unknown_screenshot";
+}
+
+export interface IdeWindowSummary {
+  title: string;
+  bounds: Rect;
+}
+
+export interface ObserveMeta {
+  screenshot_id: string;
+  source: "ide" | "screen" | "region";
+  origin: Point;
+  scale: number;
+  width: number;
+  height: number;
+  window_title?: string;
+  note?: string;
+}
+
+interface CaptureResult {
+  png: string;
+  width: number;
+  height: number;
+  scale: number;
+  origin: Point;
 }
 
 export type WaitOutput =
@@ -67,10 +117,21 @@ export class Coordinator {
   private starting = false;
   private restarts = 0;
   private background: Promise<void> = Promise.resolve();
+  private ide: { hwnd: number; title: string } | null = null;
+  private readonly screenshots = new ScreenshotStore();
 
-  constructor(private readonly deps: { launch: () => Promise<OverlayHandle> }) {}
+  constructor(private readonly deps: { launch: () => Promise<OverlayHandle>; helper?: Helper }) {}
 
-  async startSession({ title, intro }: { title: string; intro: string }): Promise<{ sessionId: string }> {
+  async startSession({
+    title,
+    intro,
+    workspace,
+  }: {
+    title: string;
+    intro: string;
+    /** The repo folder, used to pick the right VS Code window. */
+    workspace?: string;
+  }): Promise<{ sessionId: string; ideWindow: IdeWindowSummary | null }> {
     if (this.starting || this.session?.phase === "active") {
       throw new ToolError("SESSION_ACTIVE", "A lesson is already running. Call end_session first.");
     }
@@ -88,6 +149,9 @@ export class Coordinator {
         throw new ToolError("LAUNCH_FAILED", `Could not start the overlay: ${(error as Error).message}`);
       }
 
+      const ide = await this.findIde(workspace);
+      this.ide = ide && { hwnd: ide.hwnd, title: ide.title };
+
       const session = new Session();
       this.session = session;
       this.waiter = new EventWaiter(() => session.takeEvent());
@@ -96,7 +160,7 @@ export class Coordinator {
       this.apply(
         session.showStep({ kind: "card", title, bodyMd: intro, mode: "read", highlights: [], actionButtons: ["exit", "start"] }),
       );
-      return { sessionId: randomUUID() };
+      return { sessionId: randomUUID(), ideWindow: ide && { title: ide.title, bounds: ide.bounds } };
     } finally {
       this.starting = false;
     }
@@ -116,7 +180,16 @@ export class Coordinator {
 
     for (const target of input.targets) {
       if (target.kind === "none") continue;
-      const clipped = bounds ? clipToBounds(target, bounds) : { x: target.x, y: target.y, w: target.w, h: target.h };
+      let rect: Rect = { x: target.x, y: target.y, w: target.w, h: target.h };
+      if (target.space === "screenshot") {
+        const shot = target.screenshotId ? this.screenshots.get(target.screenshotId) : undefined;
+        if (!shot) {
+          unresolved.push({ target, reason: "unknown_screenshot" });
+          continue;
+        }
+        rect = screenshotToScreen(rect, shot);
+      }
+      const clipped = bounds ? clipToBounds(rect, bounds) : rect;
       if (clipped) resolved.push({ rect: clipped, method: "explicit", confidence: 1 });
       else unresolved.push({ target, reason: "off_screen" });
     }
@@ -185,6 +258,79 @@ export class Coordinator {
     return { ok: true };
   }
 
+  /**
+   * Captures the VS Code window (default), the whole primary display or a region, with a grid whose
+   * labels are screen coordinates. Works before a lesson starts so the agent can plan.
+   */
+  async observe({
+    region = "ide",
+    grid = true,
+    maxWidth = 1600,
+  }: {
+    region?: "ide" | "screen" | Rect;
+    grid?: boolean;
+    maxWidth?: number;
+  }): Promise<{ png: string; meta: ObserveMeta }> {
+    const helper = this.requireHelper();
+    try {
+      const display = (await helper.request<{ bounds: Rect }>("display_info")).bounds;
+      let source: ObserveMeta["source"] = "screen";
+      let area: Rect = display;
+      let windowTitle: string | undefined;
+      let note: string | undefined;
+
+      if (typeof region === "object") {
+        source = "region";
+        area = region;
+      } else if (region === "ide") {
+        const ide = this.ide ?? (await this.findIde());
+        if (!ide) note = "VS Code window not found; showing the whole screen.";
+        else {
+          try {
+            const state = await helper.request<{ bounds: Rect; minimized: boolean }>("window_bounds", { hwnd: ide.hwnd });
+            if (state.minimized) note = "VS Code is minimized.";
+            else {
+              source = "ide";
+              area = state.bounds;
+              windowTitle = ide.title;
+            }
+          } catch (error) {
+            if (!(error instanceof HelperError && error.code === "WINDOW_NOT_FOUND")) throw error;
+            if (this.ide?.hwnd === ide.hwnd) this.ide = null;
+            note = "VS Code window was closed; showing the whole screen.";
+          }
+        }
+      }
+
+      const clipped = clipToBounds(area, display);
+      if (!clipped) throw new ToolError("BAD_REGION", "The region is outside the screen.");
+      const capture = await helper.request<CaptureResult>("capture", { ...clipped, grid, maxWidth });
+      const shot = this.screenshots.add({
+        origin: capture.origin,
+        scale: capture.scale,
+        width: capture.width,
+        height: capture.height,
+      });
+      return {
+        png: capture.png,
+        meta: {
+          screenshot_id: shot.id,
+          source,
+          origin: shot.origin,
+          scale: shot.scale,
+          width: shot.width,
+          height: shot.height,
+          ...(windowTitle && { window_title: windowTitle }),
+          ...(note && { note }),
+        },
+      };
+    } catch (error) {
+      if (!(error instanceof HelperError)) throw error;
+      if (error.code === "CAPTURE_FAILED") throw new ToolError("CAPTURE_FAILED", error.message);
+      throw new ToolError("HELPER_UNAVAILABLE", "win-helper failed: " + error.message);
+    }
+  }
+
   /** Resolves once background work (overlay restarts and shutdowns) has settled. */
   async idle() {
     let current;
@@ -192,6 +338,32 @@ export class Coordinator {
       current = this.background;
       await current;
     } while (current !== this.background);
+  }
+
+  private requireHelper(): Helper {
+    if (!this.deps.helper) throw new ToolError("HELPER_UNAVAILABLE", "win-helper is not configured.");
+    return this.deps.helper;
+  }
+
+  /** The VS Code window for the workspace, or null when VS Code or the helper is unavailable. */
+  private async findIde(workspace?: string): Promise<WindowInfo | null> {
+    if (!this.deps.helper) return null;
+    try {
+      const windows = await this.deps.helper.request<WindowInfo[]>("list_windows", { process: "Code" });
+      return chooseIdeWindow(windows, workspace);
+    } catch {
+      return null;
+    }
+  }
+
+  /** After the user typed a question, put keyboard focus back into VS Code. */
+  private async focusIde() {
+    if (!this.ide || !this.deps.helper) return;
+    try {
+      await this.deps.helper.request("focus_window", { hwnd: this.ide.hwnd });
+    } catch {
+      // Best effort: the user can click back into VS Code.
+    }
   }
 
   private requireActive(): Session {
@@ -205,6 +377,7 @@ export class Coordinator {
     this.overlay = handle;
     handle.connection.onMessage((message) => {
       if (this.overlay !== handle || !this.session) return;
+      if (message.type === "focus_released") return this.inBackground(() => this.focusIde());
       this.apply(this.session.handleOverlay(message));
       this.waiter?.notify();
     });

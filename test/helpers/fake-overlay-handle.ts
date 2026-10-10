@@ -48,6 +48,11 @@ export class FakeOverlayHandle implements OverlayHandle {
     this.emit({ type: "ask", stepId, question });
   }
 
+  /** The ask form closed and gave keyboard focus back. */
+  release() {
+    this.emit({ type: "focus_released" });
+  }
+
   crash(code = 1) {
     this.exitListeners.forEach((listener) => listener(code));
   }

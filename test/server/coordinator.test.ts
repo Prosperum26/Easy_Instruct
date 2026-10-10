@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { Coordinator, ToolError } from "../../src/server/coordinator.js";
+import { FakeHelper } from "../helpers/fake-helper.js";
 import { FakeOverlayHandle } from "../helpers/fake-overlay-handle.js";
 
 const rect = (x: number, y: number, w: number, h: number) => ({ kind: "rect" as const, x, y, w, h });
@@ -270,6 +271,149 @@ describe("Coordinator", () => {
       overlay().press("exit");
       await coordinator.idle();
       expect(overlays).toHaveLength(1);
+    });
+  });
+});
+
+describe("Coordinator with win-helper", () => {
+  let overlay: FakeOverlayHandle;
+  let helper: FakeHelper;
+  let coordinator: Coordinator;
+
+  beforeEach(() => {
+    helper = new FakeHelper();
+    coordinator = new Coordinator({ launch: async () => (overlay = new FakeOverlayHandle()), helper });
+  });
+
+  const expectCode = async (promise: Promise<unknown>, code: string) => {
+    const error = await promise.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(ToolError);
+    expect((error as ToolError).code).toBe(code);
+  };
+
+  describe("startSession", () => {
+    it("finds the VS Code window of the workspace", async () => {
+      helper.windows.unshift({ ...helper.windows[0], hwnd: 7, title: "x.ts - other - Visual Studio Code" });
+      const result = await coordinator.startSession({ title: "T", intro: "i", workspace: "C:/repos/fastapi-demo" });
+      expect(result.ideWindow).toEqual({ title: "main.py - fastapi-demo - Visual Studio Code", bounds: helper.windows[1].bounds });
+    });
+
+    it("still starts when VS Code is not found", async () => {
+      helper.windows = [];
+      await expect(coordinator.startSession({ title: "T", intro: "i" })).resolves.toMatchObject({ ideWindow: null });
+    });
+
+    it("still starts when the helper is unavailable", async () => {
+      helper.unavailable = true;
+      await expect(coordinator.startSession({ title: "T", intro: "i" })).resolves.toMatchObject({ ideWindow: null });
+    });
+  });
+
+  describe("observe", () => {
+    it("captures the IDE window with a grid by default", async () => {
+      await coordinator.startSession({ title: "T", intro: "i" });
+      const shot = await coordinator.observe({});
+      expect(helper.callsTo("capture").at(-1)?.args).toEqual({ x: 0, y: 0, w: 1920, h: 1020, grid: true, maxWidth: 1600 });
+      expect(shot.meta).toMatchObject({
+        source: "ide",
+        window_title: "main.py - fastapi-demo - Visual Studio Code",
+        origin: { x: 0, y: 0 },
+        width: 1600,
+        height: 850,
+      });
+      expect(shot.meta.screenshot_id).toMatch(/^shot-/);
+      expect(shot.png).toBe("iVBORw0KGgo=");
+    });
+
+    it("works before a lesson starts, so the agent can plan", async () => {
+      const shot = await coordinator.observe({});
+      expect(shot.meta.source).toBe("ide");
+    });
+
+    it("re-reads the window bounds each time", async () => {
+      await coordinator.startSession({ title: "T", intro: "i" });
+      helper.windows[0].bounds = { x: 100, y: 50, w: 800, h: 600 };
+      const shot = await coordinator.observe({});
+      expect(shot.meta.origin).toEqual({ x: 100, y: 50 });
+    });
+
+    it("clips a window that hangs off the screen", async () => {
+      helper.windows[0].bounds = { x: -8, y: -8, w: 1936, h: 1036 };
+      await coordinator.observe({});
+      expect(helper.callsTo("capture").at(-1)?.args).toMatchObject({ x: 0, y: 0, w: 1920, h: 1028 });
+    });
+
+    it("falls back to the whole screen when VS Code is minimized or closed", async () => {
+      helper.windows[0].minimized = true;
+      expect((await coordinator.observe({})).meta).toMatchObject({ source: "screen", note: "VS Code is minimized." });
+      helper.windows = [];
+      expect((await coordinator.observe({})).meta.source).toBe("screen");
+    });
+
+    it("captures the whole screen or an explicit region on request", async () => {
+      expect((await coordinator.observe({ region: "screen" })).meta).toMatchObject({ source: "screen", width: 1600 });
+      const region = await coordinator.observe({ region: { x: 100, y: 100, w: 400, h: 300 }, grid: false, maxWidth: 800 });
+      expect(region.meta).toMatchObject({ source: "region", origin: { x: 100, y: 100 }, width: 400 });
+      expect(helper.callsTo("capture").at(-1)?.args).toMatchObject({ grid: false, maxWidth: 800 });
+    });
+
+    it("rejects a region entirely off screen", async () => {
+      await expectCode(coordinator.observe({ region: { x: 5000, y: 0, w: 10, h: 10 } }), "BAD_REGION");
+    });
+
+    it("reports a missing helper", async () => {
+      helper.unavailable = true;
+      await expectCode(coordinator.observe({}), "HELPER_UNAVAILABLE");
+      const noHelper = new Coordinator({ launch: async () => new FakeOverlayHandle() });
+      await expectCode(noHelper.observe({}), "HELPER_UNAVAILABLE");
+    });
+  });
+
+  describe("screenshot-space targets", () => {
+    it("maps rects read off a screenshot back to the screen", async () => {
+      await coordinator.startSession({ title: "T", intro: "i" });
+      const shot = await coordinator.observe({}); // 1920 wide -> 1600, scale 5/6
+      const result = await coordinator.showStep({
+        title: "A",
+        body: "b",
+        mode: "read",
+        targets: [{ kind: "rect", x: 100, y: 50, w: 250, h: 25, space: "screenshot", screenshotId: shot.meta.screenshot_id }],
+      });
+      expect(result.resolved[0].rect).toEqual({ x: 120, y: 60, w: 300, h: 30 });
+    });
+
+    it("reports unknown screenshot ids as unresolved", async () => {
+      await coordinator.startSession({ title: "T", intro: "i" });
+      const target = { kind: "rect" as const, x: 1, y: 1, w: 5, h: 5, space: "screenshot" as const, screenshotId: "shot-404" };
+      const result = await coordinator.showStep({ title: "A", body: "b", mode: "read", targets: [target] });
+      expect(result.unresolved).toEqual([{ target, reason: "unknown_screenshot" }]);
+    });
+  });
+
+  describe("keyboard focus", () => {
+    it("gives focus back to VS Code when the ask form closes", async () => {
+      await coordinator.startSession({ title: "T", intro: "i" });
+      overlay.release();
+      await coordinator.idle();
+      expect(helper.callsTo("focus_window")).toEqual([{ cmd: "focus_window", args: { hwnd: 42 } }]);
+    });
+
+    it("does nothing without a known VS Code window", async () => {
+      helper.windows = [];
+      await coordinator.startSession({ title: "T", intro: "i" });
+      overlay.release();
+      await coordinator.idle();
+      expect(helper.callsTo("focus_window")).toEqual([]);
+    });
+
+    it("ignores focus failures", async () => {
+      await coordinator.startSession({ title: "T", intro: "i" });
+      helper.unavailable = true;
+      overlay.release();
+      await expect(coordinator.idle()).resolves.toBeUndefined();
     });
   });
 });
