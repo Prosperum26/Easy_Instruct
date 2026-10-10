@@ -14,6 +14,12 @@ internal static partial class Win32
     public delegate bool EnumWindowsProc(nint hwnd, nint lParam);
 
     public const int SW_RESTORE = 9;
+    public const int SM_CXSCREEN = 0;
+    public const int SM_CYSCREEN = 1;
+
+    [LibraryImport("user32.dll")]
+    public static partial int GetSystemMetrics(int index);
+
     public const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     public const int DWMWA_CLOAKED = 14;
 

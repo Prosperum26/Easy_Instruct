@@ -15,7 +15,20 @@ public static class WindowCommands
         dispatcher.Register("window_bounds", WindowBounds);
         dispatcher.Register("foreground_window", ForegroundWindow);
         dispatcher.Register("focus_window", FocusWindow);
+        dispatcher.Register("display_info", DisplayInfo);
     }
+
+    /// <summary>The primary display; with PerMonitorV2 awareness the metrics are physical pixels.</summary>
+    public static JsonObject? DisplayInfo(JsonObject? args) => new()
+    {
+        ["bounds"] = new JsonObject
+        {
+            ["x"] = 0,
+            ["y"] = 0,
+            ["w"] = Win32.GetSystemMetrics(Win32.SM_CXSCREEN),
+            ["h"] = Win32.GetSystemMetrics(Win32.SM_CYSCREEN),
+        },
+    };
 
     /// <summary>Visible, titled, unowned windows in z-order (topmost first), optionally of one process.</summary>
     public static JsonNode? ListWindows(JsonObject? args)

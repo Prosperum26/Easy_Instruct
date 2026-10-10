@@ -53,3 +53,16 @@ public class WindowCommandsTests
         if (foreground is not null) Assert.True((long)foreground["hwnd"]! != 0);
     }
 }
+
+public class DisplayCommandTests
+{
+    [Fact]
+    public void Reports_the_primary_display_in_physical_pixels()
+    {
+        var info = WindowCommands.DisplayInfo(null)!;
+        Assert.Equal(0, (int)info["bounds"]!["x"]!);
+        Assert.Equal(0, (int)info["bounds"]!["y"]!);
+        Assert.True((int)info["bounds"]!["w"]! > 0);
+        Assert.True((int)info["bounds"]!["h"]! > 0);
+    }
+}
