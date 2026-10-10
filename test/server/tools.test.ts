@@ -3,9 +3,10 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Coordinator } from "../../src/server/coordinator.js";
 import { createServer } from "../../src/server/tools.js";
+import { FakeHelper } from "../helpers/fake-helper.js";
 import { FakeOverlayHandle } from "../helpers/fake-overlay-handle.js";
 
-type CallResult = { content: Array<{ type: string; text?: string }>; isError?: boolean };
+type CallResult = { content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>; isError?: boolean };
 
 describe("MCP tools", () => {
   let client: Client;
@@ -14,6 +15,7 @@ describe("MCP tools", () => {
   beforeEach(async () => {
     const coordinator = new Coordinator({
       launch: async () => (overlay = new FakeOverlayHandle()),
+      helper: new FakeHelper(),
     });
     const server = createServer(coordinator);
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -26,9 +28,9 @@ describe("MCP tools", () => {
     (await client.callTool({ name, arguments: args })) as CallResult;
   const json = (result: CallResult) => JSON.parse(result.content[0].text!);
 
-  it("lists the M2 tools", async () => {
+  it("lists the tools", async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["end_session", "show_card", "show_step", "start_session", "wait_for_user"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["end_session", "observe", "show_card", "show_step", "start_session", "wait_for_user"]);
   });
 
   it("runs a short lesson end to end", async () => {
@@ -88,5 +90,42 @@ describe("MCP tools", () => {
   it("rejects timeouts above one hour", async () => {
     await call("start_session", { title: "T", intro: "i" });
     expect((await call("wait_for_user", { timeout_sec: 7200 })).isError).toBe(true);
+  });
+
+
+  it("returns the screenshot as an image plus its metadata", async () => {
+    const result = await call("observe", {});
+    expect(result.content[0]).toEqual({ type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" });
+    expect(JSON.parse(result.content[1].text!)).toMatchObject({ screenshot_id: "shot-1", source: "ide", scale: 1600 / 1920 });
+  });
+
+  it("reports the VS Code window found for the workspace", async () => {
+    const started = json(await call("start_session", { title: "T", intro: "i", workspace: "C:/repos/fastapi-demo" }));
+    expect(started.ide_window).toMatchObject({ title: "main.py - fastapi-demo - Visual Studio Code" });
+  });
+
+  it("accepts rects in screenshot pixels", async () => {
+    await call("start_session", { title: "T", intro: "i" });
+    await call("observe", {});
+    const shown = json(
+      await call("show_step", {
+        title: "A",
+        body: "b",
+        mode: "read",
+        targets: [{ kind: "rect", x: 100, y: 50, w: 250, h: 25, space: "screenshot", screenshot_id: "shot-1" }],
+      }),
+    );
+    expect(shown.resolved[0].rect).toEqual({ x: 120, y: 60, w: 300, h: 30 });
+  });
+
+  it("requires a screenshot id for screenshot-space rects", async () => {
+    await call("start_session", { title: "T", intro: "i" });
+    const result = await call("show_step", {
+      title: "A",
+      body: "b",
+      mode: "read",
+      targets: [{ kind: "rect", x: 1, y: 1, w: 5, h: 5, space: "screenshot" }],
+    });
+    expect(result.isError).toBe(true);
   });
 });

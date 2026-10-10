@@ -12,23 +12,53 @@ const targetSchema = z.discriminatedUnion("kind", [
       y: z.number(),
       w: z.number().positive(),
       h: z.number().positive(),
+      space: z
+        .enum(["screen", "screenshot"])
+        .default("screen")
+        .describe(
+          "'screen': physical screen pixels, as printed on the observe grid labels. " +
+            "'screenshot': pixels of an observe image; requires screenshot_id.",
+        ),
+      screenshot_id: z.string().optional(),
     })
-    .describe("A rectangle in physical screen pixels (top-left of the primary display is 0,0)."),
+    .describe("A rectangle to highlight."),
   z.object({ kind: z.literal("none") }).describe("No highlight; the bubble is shown as a centred card."),
 ]);
 
+const targetsSchema = z
+  .array(targetSchema)
+  .max(3)
+  .refine((targets) => targets.every((t) => t.kind !== "rect" || t.space !== "screenshot" || t.screenshot_id), {
+    message: "screenshot_id is required when space is 'screenshot'.",
+  });
+
+const regionSchema = z.object({
+  x: z.number().int(),
+  y: z.number().int(),
+  w: z.number().int().positive(),
+  h: z.number().int().positive(),
+});
+
 const ok = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data) }] });
 
-async function run(work: () => Promise<unknown>) {
+type ToolResult = {
+  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
+  isError?: boolean;
+};
+
+/** Runs a tool body; ToolErrors become isError results prefixed with their code. */
+async function respond(work: () => Promise<ToolResult>): Promise<ToolResult> {
   try {
-    return ok(await work());
+    return await work();
   } catch (error) {
     if (error instanceof ToolError) {
-      return { content: [{ type: "text" as const, text: `${error.code}: ${error.message}` }], isError: true };
+      return { content: [{ type: "text", text: `${error.code}: ${error.message}` }], isError: true };
     }
     throw error;
   }
 }
+
+const run = (work: () => Promise<unknown>) => respond(async () => ok(await work()));
 
 /** The Easy Instruct MCP server: tools an agent uses to teach the user step by step on screen. */
 export function createServer(coordinator: Coordinator): McpServer {
@@ -40,14 +70,20 @@ export function createServer(coordinator: Coordinator): McpServer {
       title: "Start a guided lesson",
       description:
         "Opens a full-screen overlay that dims the screen and shows an intro card with Start/Exit. " +
-        "Plan the whole lesson before calling this. Then call wait_for_user; the user pressing Start returns event 'next'. " +
+        "Plan the whole lesson before calling this (observe works before a lesson, too). Then call wait_for_user; " +
+        "the user pressing Start returns event 'next'. Pass workspace (the repo folder) so the right VS Code window is used. " +
         "The user performs every action themselves: never click, type or run commands for them during a lesson.",
       inputSchema: {
         title: z.string().min(1).max(120).describe("Lesson title, e.g. 'Tour of this FastAPI repo'."),
         intro: z.string().min(1).max(2000).describe("Markdown: what the lesson covers and roughly how long it takes."),
+        workspace: z.string().max(1000).optional().describe("Absolute path of the repo folder open in VS Code."),
       },
     },
-    ({ title, intro }) => run(async () => ({ session_id: (await coordinator.startSession({ title, intro })).sessionId })),
+    ({ title, intro, workspace }) =>
+      run(async () => {
+        const started = await coordinator.startSession({ title, intro, workspace });
+        return { session_id: started.sessionId, ide_window: started.ideWindow };
+      }),
   );
 
   server.registerTool(
@@ -55,7 +91,8 @@ export function createServer(coordinator: Coordinator): McpServer {
     {
       title: "Show a lesson step",
       description:
-        "Highlights up to 3 screen areas and shows an explanation bubble next to them. Returns immediately with which " +
+        "Highlights up to 3 screen areas and shows an explanation bubble next to them. Find the areas with observe first. " +
+        "Returns immediately with which " +
         "targets were drawn (resolved) and which were not on screen (unresolved); then call wait_for_user. " +
         "mode 'read': the user reads and presses Next. 'click': tell the user what to click inside the highlight; they press Skip when done. " +
         "'do': tell the user exactly what to do (e.g. a command in a code block, then press Enter); they press Done when finished. " +
@@ -63,15 +100,56 @@ export function createServer(coordinator: Coordinator): McpServer {
       inputSchema: {
         title: z.string().min(1).max(120),
         body: z.string().min(1).max(4000).describe("Markdown: **bold**, *italic*, `code`, fenced code blocks and lists."),
-        targets: z.array(targetSchema).max(3).describe("Areas to highlight; empty shows a centred card."),
+        targets: targetsSchema.describe("Areas to highlight; empty shows a centred card."),
         mode: z.enum(["read", "click", "do"]),
         step_label: z.string().max(20).optional().describe("Progress label such as '3/9'."),
       },
     },
     ({ title, body, targets, mode, step_label }) =>
       run(async () => {
-        const result = await coordinator.showStep({ title, body, targets, mode, label: step_label });
+        const result = await coordinator.showStep({
+          title,
+          body,
+          mode,
+          label: step_label,
+          targets: targets.map((t) =>
+            t.kind === "rect"
+              ? { kind: "rect", x: t.x, y: t.y, w: t.w, h: t.h, space: t.space, screenshotId: t.screenshot_id }
+              : t,
+          ),
+        });
         return { step_id: result.stepId, resolved: result.resolved, unresolved: result.unresolved };
+      }),
+  );
+
+  server.registerTool(
+    "observe",
+    {
+      title: "Look at the screen",
+      description:
+        "Screenshot of the VS Code window (default), the whole screen, or a region. The overlay is never in the picture. " +
+        "With grid (default on), dotted lines every 100 px are labelled with physical screen coordinates: read a target's " +
+        "edges off the labels and pass them to show_step as a 'screen' rect. Alternatively use pixel positions in the " +
+        "image with space 'screenshot' and the returned screenshot_id. Observe again after the user scrolls, opens files " +
+        "or runs commands, and to check the result of a 'do' step.",
+      inputSchema: {
+        region: z
+          .union([z.enum(["ide", "screen"]), regionSchema])
+          .default("ide")
+          .describe("'ide', 'screen', or {x, y, w, h} in physical screen pixels."),
+        grid: z.boolean().default(true),
+        max_width: z.number().int().min(400).max(2000).default(1600).describe("The image is shrunk to at most this width."),
+      },
+    },
+    ({ region, grid, max_width }) =>
+      respond(async () => {
+        const { png, meta } = await coordinator.observe({ region, grid, maxWidth: max_width });
+        return {
+          content: [
+            { type: "image", data: png, mimeType: "image/png" },
+            { type: "text", text: JSON.stringify(meta) },
+          ],
+        };
       }),
   );
 
