@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -27,8 +29,14 @@ namespace WinHelper
             return dispatcher;
         }
 
-        public static void RunStdio()
+        /// <summary>
+        /// Runs the request loop on stdin/stdout. When <paramref name="parentPid"/> is given, also exits as
+        /// soon as that process dies: stdin EOF alone is not enough, because a killed MCP server's pipe can
+        /// stay open when another process inherited the handle.
+        /// </summary>
+        public static void RunStdio(int parentPid)
         {
+            WatchParent(parentPid, delegate { Environment.Exit(0); });
             // The exe already declares this in its manifest; PowerShell needs it at runtime so all
             // coordinates are physical pixels. Fails harmlessly when already set.
             SetProcessDpiAwarenessContext(PerMonitorAwareV2);
@@ -36,6 +44,35 @@ namespace WinHelper
             var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false), true);
             var output = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
             Run(input, output);
+        }
+
+        /// <summary>Calls <paramref name="onExit"/> once the process with <paramref name="pid"/> has exited (pid 0: never).</summary>
+        public static void WatchParent(int pid, Action onExit)
+        {
+            if (pid <= 0) return;
+            Process parent;
+            try
+            {
+                parent = Process.GetProcessById(pid);
+            }
+            catch (ArgumentException)
+            {
+                onExit();
+                return;
+            }
+
+            var watcher = new Thread(delegate()
+            {
+                try
+                {
+                    while (!parent.WaitForExit(1000)) { }
+                }
+                catch (InvalidOperationException) { }
+                catch (System.ComponentModel.Win32Exception) { }
+                onExit();
+            });
+            watcher.IsBackground = true;
+            watcher.Start();
         }
 
         public static void Run(TextReader input, TextWriter output)

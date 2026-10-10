@@ -16,6 +16,8 @@ export interface HelperClientOptions {
   command: string;
   args: string[];
   requestTimeoutMs?: number;
+  /** How long close() waits for the helper to exit after closing its stdin before killing it. */
+  closeGraceMs?: number;
 }
 
 interface Pending {
@@ -34,6 +36,7 @@ const DEBUG = process.env.EASY_INSTRUCT_DEBUG === "1";
  */
 export class HelperClient {
   private child: ChildProcessWithoutNullStreams | null = null;
+  private childExited: Promise<void> = Promise.resolve();
   private readonly pending = new Map<number, Pending>();
   private nextId = 1;
   private starts = 0;
@@ -65,15 +68,27 @@ export class HelperClient {
     });
   }
 
-  close() {
+  /**
+   * Stops the helper: closes its stdin (it exits on EOF) and kills it if it is still running after
+   * the grace period, e.g. because another process inherited its pipe and EOF never arrives.
+   */
+  async close(): Promise<void> {
     this.unavailable ??= "win-helper was closed.";
     this.failAll(new HelperError("HELPER_UNAVAILABLE", this.unavailable));
-    process.off("exit", this.killOnExit);
     const child = this.child;
     this.child = null;
-    if (!child) return;
-    child.stdin.end();
-    setTimeout(() => child.kill(), 1000).unref();
+    if (child) {
+      child.stdin.end();
+      const graceful = await Promise.race([
+        this.childExited.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), this.options.closeGraceMs ?? 1000)),
+      ]);
+      if (!graceful) {
+        child.kill();
+        await this.childExited;
+      }
+    }
+    process.off("exit", this.killOnExit);
   }
 
   private ensureStarted(): ChildProcessWithoutNullStreams {
@@ -94,6 +109,10 @@ export class HelperClient {
       throw new HelperError("HELPER_UNAVAILABLE", this.unavailable);
     }
     this.child = child;
+    this.childExited = new Promise((resolve) => {
+      child.once("exit", () => resolve());
+      child.once("error", () => resolve());
+    });
     child.stdin.on("error", () => {});
     child.stderr.on("data", (chunk) => {
       if (DEBUG) process.stderr.write(chunk);

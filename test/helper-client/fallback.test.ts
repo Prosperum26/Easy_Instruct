@@ -64,9 +64,9 @@ describe("helperBackends", () => {
 
   it("tries the exe first, then PowerShell", () => {
     const dir = dirWithExe();
-    const backends = helperBackends(dir, "auto");
+    const backends = helperBackends(dir, "auto", 4242);
     expect(backends.map((b) => b.name)).toEqual(["dotnet", "powershell"]);
-    expect(backends[0].command).toBe(path.join(dir, "win-helper.exe"));
+    expect(backends[0]).toMatchObject({ command: path.join(dir, "win-helper.exe"), args: ["--parent-pid=4242"] });
     expect(backends[1].args).toEqual([
       "-NoLogo",
       "-NoProfile",
@@ -75,6 +75,8 @@ describe("helperBackends", () => {
       "Bypass",
       "-File",
       path.join(dir, "host.ps1"),
+      "-ParentPid",
+      "4242",
     ]);
   });
 

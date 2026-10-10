@@ -14,13 +14,24 @@ export interface HelperBackend {
  * sources compiled by Windows PowerShell (signed by Microsoft). `preference` comes from
  * EASY_INSTRUCT_HELPER: "dotnet", "powershell" or "auto".
  */
-export function helperBackends(dir: string, preference = "auto"): HelperBackend[] {
+export function helperBackends(dir: string, preference = "auto", parentPid = process.pid): HelperBackend[] {
   const exe = path.join(dir, "win-helper.exe");
-  const dotnet: HelperBackend = { name: "dotnet", command: exe, args: [] };
+  // The helper exits when this process dies, even if it is killed before closing the helper's stdin.
+  const dotnet: HelperBackend = { name: "dotnet", command: exe, args: [`--parent-pid=${parentPid}`] };
   const powershell: HelperBackend = {
     name: "powershell",
     command: path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path.join(dir, "host.ps1")],
+    args: [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      path.join(dir, "host.ps1"),
+      "-ParentPid",
+      String(parentPid),
+    ],
   };
   if (preference === "dotnet") return [dotnet];
   if (preference === "powershell") return [powershell];
@@ -59,14 +70,14 @@ export class FallbackHelper {
         if (!(error instanceof HelperError)) throw error;
         const broken = error.code === "HELPER_UNAVAILABLE" || (error.code === "HELPER_EXITED" && !current.answered);
         if (!broken) throw error;
-        current.client.close();
+        void current.client.close();
         this.index++;
       }
     }
     throw new HelperError("HELPER_UNAVAILABLE", "No win-helper backend could run on this machine.");
   }
 
-  close() {
-    this.clients.forEach(({ client }) => client.close());
+  async close(): Promise<void> {
+    await Promise.all(this.clients.map(({ client }) => client.close()));
   }
 }

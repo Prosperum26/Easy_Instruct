@@ -6,7 +6,10 @@
 //   die            -> exits with code 1 without answering
 //   garbage        -> prints a non-JSON line, then answers {ok: true}
 //   pid            -> result = process.pid
+// FAKE_HELPER_IGNORE_EOF=1 keeps running after stdin closes (like a helper whose pipe was inherited).
 import readline from "node:readline";
+
+if (process.env.FAKE_HELPER_IGNORE_EOF === "1") setInterval(() => {}, 1000);
 
 const reply = (id, result) => process.stdout.write(JSON.stringify({ id, ok: true, result }) + "\n");
 const fail = (id, code, message) => process.stdout.write(JSON.stringify({ id, ok: false, error: { code, message } }) + "\n");

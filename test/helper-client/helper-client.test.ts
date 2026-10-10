@@ -73,6 +73,34 @@ describe("HelperClient", () => {
     expect(await errorCode(client.request("echo"))).toBe("HELPER_UNAVAILABLE");
   });
 
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it("waits for the helper to exit on close", async () => {
+    start();
+    const pid = await client.request<number>("pid");
+    await client.close();
+    expect(alive(pid)).toBe(false);
+  });
+
+  it("kills a helper that keeps running after stdin closes", async () => {
+    process.env.FAKE_HELPER_IGNORE_EOF = "1";
+    try {
+      client = new HelperClient({ command: process.execPath, args: [fakeHelper], closeGraceMs: 200 });
+      const pid = await client.request<number>("pid");
+      await client.close();
+      expect(alive(pid)).toBe(false);
+    } finally {
+      delete process.env.FAKE_HELPER_IGNORE_EOF;
+    }
+  });
+
   it("rejects requests after close", async () => {
     start();
     client.close();
