@@ -1,100 +1,66 @@
+using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace WinHelper;
-
-[StructLayout(LayoutKind.Sequential)]
-public struct RECT
+namespace WinHelper
 {
-    public int Left, Top, Right, Bottom;
-}
-
-internal static partial class Win32
-{
-    public delegate bool EnumWindowsProc(nint hwnd, nint lParam);
-
-    public const int SW_RESTORE = 9;
-    public const int SM_CXSCREEN = 0;
-    public const int SM_CYSCREEN = 1;
-
-    [LibraryImport("user32.dll")]
-    public static partial int GetSystemMetrics(int index);
-
-    public const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
-    public const int DWMWA_CLOAKED = 14;
-
-    [DllImport("user32.dll")]
-    public static extern bool EnumWindows(EnumWindowsProc callback, nint lParam);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool IsWindow(nint hwnd);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool IsWindowVisible(nint hwnd);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool IsIconic(nint hwnd);
-
-    [LibraryImport("user32.dll")]
-    public static partial nint GetWindow(nint hwnd, uint cmd);
-
-    [LibraryImport("user32.dll", EntryPoint = "GetWindowTextLengthW")]
-    public static partial int GetWindowTextLength(nint hwnd);
-
-    [LibraryImport("user32.dll", EntryPoint = "GetWindowTextW", StringMarshalling = StringMarshalling.Utf16)]
-    public static partial int GetWindowText(nint hwnd, [Out] char[] text, int maxCount);
-
-    [LibraryImport("user32.dll")]
-    public static partial uint GetWindowThreadProcessId(nint hwnd, out uint processId);
-
-    [LibraryImport("user32.dll")]
-    public static partial nint GetForegroundWindow();
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool SetForegroundWindow(nint hwnd);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool BringWindowToTop(nint hwnd);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool ShowWindow(nint hwnd, int cmd);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool AttachThreadInput(uint attach, uint attachTo, [MarshalAs(UnmanagedType.Bool)] bool doAttach);
-
-    [LibraryImport("kernel32.dll")]
-    public static partial uint GetCurrentThreadId();
-
-    [LibraryImport("dwmapi.dll")]
-    public static partial int DwmGetWindowAttribute(nint hwnd, int attribute, out RECT value, int size);
-
-    [LibraryImport("dwmapi.dll")]
-    public static partial int DwmGetWindowAttribute(nint hwnd, int attribute, out int value, int size);
-
-    public static string WindowTitle(nint hwnd)
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT
     {
-        var length = GetWindowTextLength(hwnd);
-        if (length == 0) return "";
-        var buffer = new char[length + 1];
-        var copied = GetWindowText(hwnd, buffer, buffer.Length);
-        return new string(buffer, 0, copied);
+        public int Left, Top, Right, Bottom;
     }
 
-    /// <summary>The visible frame in physical pixels (excludes the invisible resize border).</summary>
-    public static RECT WindowFrame(nint hwnd)
+    internal static class Win32
     {
-        if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT rect, Marshal.SizeOf<RECT>()) != 0)
-            throw new HelperException("WIN32_FAILED", "Could not read the window bounds.");
-        return rect;
-    }
+        public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 
-    public static bool IsCloaked(nint hwnd) =>
-        DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out int cloaked, sizeof(int)) == 0 && cloaked != 0;
+        public const int SW_RESTORE = 9;
+        public const int SM_CXSCREEN = 0;
+        public const int SM_CYSCREEN = 1;
+        public const uint GW_OWNER = 4;
+        public const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+        public const int DWMWA_CLOAKED = 14;
+
+        [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+        [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hwnd);
+        [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+        [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hwnd);
+        [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hwnd, uint cmd);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowTextLength(IntPtr hwnd);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int maxCount);
+        [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+        [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+        [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
+        [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int cmd);
+        [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint attach, uint attachTo, bool doAttach);
+        [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+        [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+        [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out RECT value, int size);
+        [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+
+        public static string WindowTitle(IntPtr hwnd)
+        {
+            var length = GetWindowTextLength(hwnd);
+            if (length == 0) return "";
+            var buffer = new StringBuilder(length + 1);
+            GetWindowText(hwnd, buffer, buffer.Capacity);
+            return buffer.ToString();
+        }
+
+        /// <summary>The visible frame in physical pixels (excludes the invisible resize border).</summary>
+        public static RECT WindowFrame(IntPtr hwnd)
+        {
+            RECT rect;
+            if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, Marshal.SizeOf(typeof(RECT))) != 0)
+                throw new HelperException("WIN32_FAILED", "Could not read the window bounds.");
+            return rect;
+        }
+
+        public static bool IsCloaked(IntPtr hwnd)
+        {
+            int cloaked;
+            return DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out cloaked, sizeof(int)) == 0 && cloaked != 0;
+        }
+    }
 }

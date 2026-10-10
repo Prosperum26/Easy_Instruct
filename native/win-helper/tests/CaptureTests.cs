@@ -1,22 +1,23 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
-using System.Text.Json.Nodes;
 using WinHelper;
+using static TestJson;
 
 public class CaptureMathTests
 {
     [Fact]
     public void Shrinks_to_the_max_width_keeping_the_aspect_ratio()
     {
-        var (w, h, scale) = CaptureMath.OutputSize(1920, 1080, 1600);
-        Assert.Equal((1600, 900), (w, h));
-        Assert.Equal(1600.0 / 1920, scale, 6);
+        var size = CaptureMath.Shrink(1920, 1080, 1600);
+        Assert.Equal((1600, 900), (size.Width, size.Height));
+        Assert.Equal(1600.0 / 1920, size.Scale, 6);
     }
 
     [Fact]
     public void Never_enlarges_small_captures()
     {
-        Assert.Equal((800, 600, 1.0), CaptureMath.OutputSize(800, 600, 1600));
+        var size = CaptureMath.Shrink(800, 600, 1600);
+        Assert.Equal((800, 600, 1.0), (size.Width, size.Height, size.Scale));
     }
 
     [Fact]
@@ -63,8 +64,16 @@ public class PngTests
     {
         var png = Png.EncodeBgra(new byte[4 * 3 * 2], 3, 2);
         // IHDR CRC covers type + 13 data bytes.
-        var expected = Png.Crc32(png.AsSpan(12, 17));
-        Assert.Equal(expected, BinaryPrimitives.ReadUInt32BigEndian(png.AsSpan(29)));
+        Assert.Equal(Png.Crc32(png, 12, 17), BinaryPrimitives.ReadUInt32BigEndian(png.AsSpan(29)));
+    }
+
+    [Fact]
+    public void Writes_a_valid_zlib_stream_with_adler32()
+    {
+        var bgra = new byte[4 * 50 * 20];
+        new Random(1).NextBytes(bgra);
+        // ZLibStream verifies the zlib header and Adler-32 trailer while decompressing.
+        Assert.Equal(20 * (1 + 50 * 3), DecompressIdat(Png.EncodeBgra(bgra, 50, 20)).Length);
     }
 
     private static byte[] DecompressIdat(byte[] png)
@@ -90,35 +99,32 @@ public class PngTests
 
 public class CaptureCommandTests
 {
+    private static Dictionary<string, object> Capture(params (string, object)[] args) =>
+        Obj(CaptureCommands.Capture(Args(args)));
+
     [Fact]
     public void Captures_a_screen_region_as_png()
     {
-        var result = CaptureCommands.Capture(new JsonObject { ["x"] = 0, ["y"] = 0, ["w"] = 64, ["h"] = 32 })!;
-        Assert.Equal(64, (int)result["width"]!);
-        Assert.Equal(32, (int)result["height"]!);
-        Assert.Equal(1.0, (double)result["scale"]!);
-        var png = Convert.FromBase64String((string)result["png"]!);
-        Assert.Equal(0x89, png[0]);
+        var result = Capture(("x", 0.0), ("y", 0.0), ("w", 64.0), ("h", 32.0));
+        Assert.Equal(64, Num(result["width"]));
+        Assert.Equal(32, Num(result["height"]));
+        Assert.Equal(1.0, result["scale"]);
+        Assert.Equal(0x89, Convert.FromBase64String((string)result["png"])[0]);
     }
 
     [Fact]
     public void Scales_and_reports_the_scale()
     {
-        var result = CaptureCommands.Capture(new JsonObject
-        {
-            ["x"] = 0, ["y"] = 0, ["w"] = 400, ["h"] = 200, ["maxWidth"] = 100, ["grid"] = true,
-        })!;
-        Assert.Equal(100, (int)result["width"]!);
-        Assert.Equal(50, (int)result["height"]!);
-        Assert.Equal(0.25, (double)result["scale"]!, 6);
+        var result = Capture(("x", 0.0), ("y", 0.0), ("w", 400.0), ("h", 200.0), ("maxWidth", 100.0), ("grid", true));
+        Assert.Equal(100, Num(result["width"]));
+        Assert.Equal(50, Num(result["height"]));
+        Assert.Equal(0.25, (double)result["scale"], 6);
     }
 
     [Fact]
     public void Rejects_empty_or_huge_regions()
     {
-        Assert.Equal("BAD_ARGS", Assert.Throws<HelperException>(() =>
-            CaptureCommands.Capture(new JsonObject { ["x"] = 0, ["y"] = 0, ["w"] = 0, ["h"] = 10 })).Code);
-        Assert.Equal("BAD_ARGS", Assert.Throws<HelperException>(() =>
-            CaptureCommands.Capture(new JsonObject { ["x"] = 0, ["y"] = 0, ["w"] = 20000, ["h"] = 10 })).Code);
+        Assert.Equal("BAD_ARGS", Assert.Throws<HelperException>(() => Capture(("x", 0.0), ("y", 0.0), ("w", 0.0), ("h", 10.0))).Code);
+        Assert.Equal("BAD_ARGS", Assert.Throws<HelperException>(() => Capture(("x", 0.0), ("y", 0.0), ("w", 20000.0), ("h", 10.0))).Code);
     }
 }
