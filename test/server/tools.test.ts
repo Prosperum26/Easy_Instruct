@@ -3,6 +3,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Coordinator } from "../../src/server/coordinator.js";
 import { createServer } from "../../src/server/tools.js";
+import { explorerAndTerminal } from "../fixtures/uia/vscode-layout.js";
 import { FakeHelper } from "../helpers/fake-helper.js";
 import { FakeOverlayHandle } from "../helpers/fake-overlay-handle.js";
 
@@ -15,7 +16,7 @@ describe("MCP tools", () => {
   beforeEach(async () => {
     const coordinator = new Coordinator({
       launch: async () => (overlay = new FakeOverlayHandle()),
-      helper: new FakeHelper(),
+      helper: Object.assign(new FakeHelper(), { snapshot: explorerAndTerminal() }),
     });
     const server = createServer(coordinator);
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -30,7 +31,7 @@ describe("MCP tools", () => {
 
   it("lists the tools", async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["end_session", "observe", "show_card", "show_step", "start_session", "wait_for_user"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["end_session", "observe", "open_location", "show_card", "show_step", "start_session", "wait_for_user"]);
   });
 
   it("runs a short lesson end to end", async () => {
@@ -127,5 +128,59 @@ describe("MCP tools", () => {
       targets: [{ kind: "rect", x: 1, y: 1, w: 5, h: 5, space: "screenshot" }],
     });
     expect(result.isError).toBe(true);
+  });
+
+
+  it("highlights VS Code parts, text and lines by description", async () => {
+    await call("start_session", { title: "T", intro: "i" });
+    const shown = json(
+      await call("show_step", {
+        title: "A",
+        body: "b",
+        mode: "read",
+        targets: [
+          { kind: "ui", element: "explorer" },
+          { kind: "text", text: "README.md", within: "tabs", occurrence: 1 },
+        ],
+      }),
+    );
+    expect(shown.resolved.map((r: { method: string }) => r.method)).toEqual(["uia", "uia"]);
+    expect(shown.resolved[0]).toMatchObject({ detail: "view" });
+  });
+
+  it("returns a preview image when asked to verify", async () => {
+    await call("start_session", { title: "T", intro: "i" });
+    const result = await call("show_step", {
+      title: "A",
+      body: "b",
+      mode: "read",
+      verify: true,
+      targets: [{ kind: "ui", element: "editor" }],
+    });
+    expect(JSON.parse(result.content[0].text!)).toHaveProperty("preview");
+    expect(result.content[1]).toMatchObject({ type: "image", mimeType: "image/png" });
+  });
+
+  it("rejects line ranges that end before they start", async () => {
+    await call("start_session", { title: "T", intro: "i" });
+    const result = await call("show_step", {
+      title: "A",
+      body: "b",
+      mode: "read",
+      targets: [{ kind: "lines", file: "app.py", start: 10, end: 5 }],
+    });
+    expect(result.isError).toBe(true);
+  });
+
+  it("rejects unknown VS Code parts", async () => {
+    await call("start_session", { title: "T", intro: "i" });
+    const result = await call("show_step", { title: "A", body: "b", mode: "read", targets: [{ kind: "ui", element: "minimap" }] });
+    expect(result.isError).toBe(true);
+  });
+
+  it("reports open_location problems with a code", async () => {
+    const result = await call("open_location", { file: "C:/definitely/not/here.py", line: 3 });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/^FILE_NOT_FOUND:/);
   });
 });

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { Coordinator, ToolError } from "../../src/server/coordinator.js";
+import { OpenFileError } from "../../src/locator/locator.js";
+import { explorerAndTerminal, searchOpenPanelClosed } from "../fixtures/uia/vscode-layout.js";
 import { FakeHelper } from "../helpers/fake-helper.js";
 import { FakeOverlayHandle } from "../helpers/fake-overlay-handle.js";
 
@@ -424,6 +426,131 @@ describe("Coordinator with win-helper", () => {
       helper.unavailable = true;
       overlay.release();
       await expect(coordinator.idle()).resolves.toBeUndefined();
+    });
+  });
+});
+
+describe("Coordinator smart targets", () => {
+  let overlay: FakeOverlayHandle;
+  let helper: FakeHelper;
+  let coordinator: Coordinator;
+  let opened: Array<{ file: string; line: number; column: number; exePath?: string }>;
+  let files: Set<string>;
+  let cliMissing: boolean;
+
+  beforeEach(() => {
+    helper = new FakeHelper();
+    helper.snapshot = explorerAndTerminal();
+    opened = [];
+    files = new Set(["C:\\repos\\fastapi-demo\\app.py"]);
+    cliMissing = false;
+    coordinator = new Coordinator({
+      launch: async () => (overlay = new FakeOverlayHandle()),
+      helper,
+      openFile: async (file, line, column, exePath) => {
+        if (cliMissing) throw new OpenFileError("ide_cli_not_found", "no CLI");
+        opened.push({ file, line, column, exePath });
+      },
+      fileExists: (p) => files.has(p),
+      sleep: async () => {},
+    });
+  });
+
+  const start = () => coordinator.startSession({ title: "T", intro: "i", workspace: "C:\\repos\\fastapi-demo" });
+  const expectCode = async (promise: Promise<unknown>, code: string) => {
+    const error = await promise.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(ToolError);
+    expect((error as ToolError).code).toBe(code);
+  };
+
+  it("warms up the IDE's accessibility tree when a lesson starts", async () => {
+    await start();
+    await coordinator.idle();
+    expect(helper.callsTo("uia_snapshot")[0]?.args).toMatchObject({ hwnd: 42, minNodes: 30 });
+  });
+
+  it("highlights VS Code parts by name", async () => {
+    await start();
+    const result = await coordinator.showStep({ title: "A", body: "b", mode: "read", targets: [{ kind: "ui", element: "explorer" }] });
+    expect(result.resolved).toEqual([{ rect: { x: 55, y: 43, w: 653, h: 942 }, method: "uia", confidence: 1, detail: "view" }]);
+    expect(overlay.lastRender().highlights).toEqual([{ x: 55, y: 43, w: 653, h: 942 }]);
+  });
+
+  it("mixes explicit rects with located targets and reports what failed", async () => {
+    helper.snapshot = searchOpenPanelClosed();
+    await start();
+    const result = await coordinator.showStep({
+      title: "A",
+      body: "b",
+      mode: "read",
+      targets: [{ kind: "rect", x: 1, y: 2, w: 3, h: 4 }, { kind: "ui", element: "terminal" }],
+    });
+    expect(result.resolved).toHaveLength(1);
+    expect(result.unresolved).toEqual([{ target: { kind: "ui", element: "terminal" }, reason: "not_visible" }]);
+  });
+
+  it("looks for VS Code again when it was not open at the start", async () => {
+    const windows = helper.windows;
+    helper.windows = [];
+    await start();
+    helper.windows = windows;
+    const result = await coordinator.showStep({ title: "A", body: "b", mode: "read", targets: [{ kind: "ui", element: "editor" }] });
+    expect(result.resolved).toHaveLength(1);
+  });
+
+  it("returns a preview with the highlights outlined when asked to verify", async () => {
+    await start();
+    const result = await coordinator.showStep({
+      title: "A",
+      body: "b",
+      mode: "read",
+      verify: true,
+      targets: [{ kind: "rect", x: 100, y: 100, w: 200, h: 50 }],
+    });
+    expect(helper.callsTo("capture").at(-1)?.args).toMatchObject({
+      x: 20,
+      y: 20,
+      w: 360,
+      h: 210,
+      grid: false,
+      boxes: [[100, 100, 200, 50]],
+    });
+    expect(result.preview?.meta).toMatchObject({ source: "region", origin: { x: 20, y: 20 } });
+  });
+
+  it("skips the preview when nothing was highlighted", async () => {
+    await start();
+    const result = await coordinator.showStep({ title: "A", body: "b", mode: "read", verify: true, targets: [] });
+    expect(result.preview).toBeUndefined();
+  });
+
+  describe("openLocation", () => {
+    it("opens a workspace-relative file with the VS Code it found", async () => {
+      await start();
+      await expect(coordinator.openLocation({ file: "app.py", line: 7 })).resolves.toEqual({
+        file: "C:\\repos\\fastapi-demo\\app.py",
+        line: 7,
+      });
+      expect(opened).toEqual([{ file: "C:\\repos\\fastapi-demo\\app.py", line: 7, column: 1, exePath: "C:/VSCode/Code.exe" }]);
+    });
+
+    it("reports a missing file", async () => {
+      await start();
+      await expectCode(coordinator.openLocation({ file: "nope.py", line: 1 }), "FILE_NOT_FOUND");
+    });
+
+    it("reports a missing VS Code CLI", async () => {
+      cliMissing = true;
+      await start();
+      await expectCode(coordinator.openLocation({ file: "app.py", line: 1 }), "IDE_CLI_NOT_FOUND");
+    });
+
+    it("needs an absolute path without a lesson", async () => {
+      await expectCode(coordinator.openLocation({ file: "app.py", line: 1 }), "FILE_NOT_FOUND");
+      await expect(coordinator.openLocation({ file: "C:\\repos\\fastapi-demo\\app.py", line: 1 })).resolves.toBeDefined();
     });
   });
 });

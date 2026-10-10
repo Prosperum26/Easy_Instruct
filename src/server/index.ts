@@ -2,6 +2,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { FallbackHelper, helperBackends } from "../helper-client/fallback.js";
+import { codeExeCandidates, openLocation, resolveCodeCli } from "../ide/vscode-cli.js";
+import { OpenFileError } from "../locator/locator.js";
 import { Coordinator } from "./coordinator.js";
 import { launchOverlay } from "./overlay-launcher.js";
 import { createServer } from "./tools.js";
@@ -17,6 +19,16 @@ const helper = new FallbackHelper(helperBackends(helperDir, process.env.EASY_INS
 
 const coordinator = new Coordinator({
   helper,
+  // VS Code's CLI next to the executable of the window being taught, else the usual install folders.
+  async openFile(file, line, column, exePath) {
+    const cli = resolveCodeCli(codeExeCandidates(exePath));
+    if (!cli) throw new OpenFileError("ide_cli_not_found", "Could not find VS Code's command line (cli.js).");
+    try {
+      await openLocation(cli, file, line, column);
+    } catch (error) {
+      throw new OpenFileError("ide_cli_failed", (error as Error).message);
+    }
+  },
   async launch() {
     const overlay = await launchOverlay({ electronPath, mainPath });
     return {

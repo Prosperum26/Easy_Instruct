@@ -1,8 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { UI_ELEMENTS, type UiElement } from "../locator/vscode-layout.js";
 import { Coordinator, ToolError } from "./coordinator.js";
 
 const VERSION = "0.1.0";
+
+const uiElement = z.enum(UI_ELEMENTS as [UiElement, ...UiElement[]]);
 
 const targetSchema = z.discriminatedUnion("kind", [
   z
@@ -23,6 +26,28 @@ const targetSchema = z.discriminatedUnion("kind", [
     })
     .describe("A rectangle to highlight."),
   z.object({ kind: z.literal("none") }).describe("No highlight; the bubble is shown as a centred card."),
+  z
+    .object({ kind: z.literal("ui"), element: uiElement })
+    .describe(
+      "A VS Code part. Views (explorer, search, run_debug, source_control, extensions) give the sidebar when open " +
+        "and their activity bar icon (detail: icon) when closed: then ask the user to click it.",
+    ),
+  z
+    .object({
+      kind: z.literal("text"),
+      text: z.string().min(1).max(200),
+      within: uiElement.optional().describe("Only look inside this part, e.g. 'terminal' or 'explorer'."),
+      occurrence: z.number().int().min(1).max(50).optional().describe("1-based, in reading order."),
+    })
+    .describe("Visible text: a file name, a button, a line of terminal output. Accessible names first, then OCR."),
+  z
+    .object({
+      kind: z.literal("lines"),
+      file: z.string().min(1).max(1000).describe("Absolute, or relative to the lesson's workspace."),
+      start: z.number().int().min(1),
+      end: z.number().int().min(1).optional(),
+    })
+    .describe("Lines of code: the file is opened at start in VS Code, then the lines are found by their numbers."),
 ]);
 
 const targetsSchema = z
@@ -30,6 +55,9 @@ const targetsSchema = z
   .max(3)
   .refine((targets) => targets.every((t) => t.kind !== "rect" || t.space !== "screenshot" || t.screenshot_id), {
     message: "screenshot_id is required when space is 'screenshot'.",
+  })
+  .refine((targets) => targets.every((t) => t.kind !== "lines" || t.end === undefined || t.end >= t.start), {
+    message: "end must not be before start.",
   });
 
 const regionSchema = z.object({
@@ -91,9 +119,10 @@ export function createServer(coordinator: Coordinator): McpServer {
     {
       title: "Show a lesson step",
       description:
-        "Highlights up to 3 screen areas and shows an explanation bubble next to them. Find the areas with observe first. " +
-        "Returns immediately with which " +
-        "targets were drawn (resolved) and which were not on screen (unresolved); then call wait_for_user. " +
+        "Highlights up to 3 screen areas and shows an explanation bubble next to them. Prefer describing targets " +
+        "(ui / text / lines) over coordinates; use rects read off observe only when nothing else fits. " +
+        "Returns immediately with what was drawn (resolved: rect, method, confidence) and what was not (unresolved: " +
+        "reason); with verify, also a picture of the highlights to check before the user reads on. Then call wait_for_user. " +
         "mode 'read': the user reads and presses Next. 'click': tell the user what to click inside the highlight; they press Skip when done. " +
         "'do': tell the user exactly what to do (e.g. a command in a code block, then press Enter); they press Done when finished. " +
         "Keep the body short (under ~80 words) and say why the thing matters, not only what it is.",
@@ -103,23 +132,50 @@ export function createServer(coordinator: Coordinator): McpServer {
         targets: targetsSchema.describe("Areas to highlight; empty shows a centred card."),
         mode: z.enum(["read", "click", "do"]),
         step_label: z.string().max(20).optional().describe("Progress label such as '3/9'."),
+        verify: z.boolean().default(false).describe("Return a screenshot with the highlights outlined, to check them."),
       },
     },
-    ({ title, body, targets, mode, step_label }) =>
-      run(async () => {
+    ({ title, body, targets, mode, step_label, verify }) =>
+      respond(async () => {
         const result = await coordinator.showStep({
           title,
           body,
           mode,
           label: step_label,
+          verify,
           targets: targets.map((t) =>
             t.kind === "rect"
               ? { kind: "rect", x: t.x, y: t.y, w: t.w, h: t.h, space: t.space, screenshotId: t.screenshot_id }
               : t,
           ),
         });
-        return { step_id: result.stepId, resolved: result.resolved, unresolved: result.unresolved };
+        const summary = {
+          step_id: result.stepId,
+          resolved: result.resolved,
+          unresolved: result.unresolved,
+          ...(result.preview && { preview: result.preview.meta }),
+        };
+        const content: ToolResult["content"] = [{ type: "text", text: JSON.stringify(summary) }];
+        if (result.preview) content.push({ type: "image", data: result.preview.png, mimeType: "image/png" });
+        return { content };
       }),
+  );
+
+  server.registerTool(
+    "open_location",
+    {
+      title: "Open a file at a line",
+      description:
+        "Opens a file in the lesson's VS Code window and reveals the line, to bring code on screen before talking " +
+        "about it. A lines target in show_step does this by itself. This is presentation, not a hands-on step: " +
+        "anything the user should learn to do, they do themselves.",
+      inputSchema: {
+        file: z.string().min(1).max(1000).describe("Absolute, or relative to the lesson's workspace."),
+        line: z.number().int().min(1),
+        column: z.number().int().min(1).optional(),
+      },
+    },
+    ({ file, line, column }) => run(() => coordinator.openLocation({ file, line, column })),
   );
 
   server.registerTool(

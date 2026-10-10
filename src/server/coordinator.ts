@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { HelperError } from "../helper-client/helper-client.js";
 import { chooseIdeWindow, type WindowInfo } from "../ide/windows.js";
+import { Locator, OpenFileError, type LocateFailure, type SmartTarget } from "../locator/locator.js";
 import { ScreenshotStore, screenshotToScreen } from "../observer/screenshots.js";
-import { clipToBounds, type Point, type Rect } from "../shared/geometry.js";
+import { clipToBounds, inflate, union, type Point, type Rect } from "../shared/geometry.js";
 import type { ButtonId, DisplayInfo, OverlayToServer, ServerToOverlay, StepMode } from "../shared/protocol.js";
 import { Session, type Effects, type StepInput } from "../session/session.js";
 import { EventWaiter, WaitInProgressError } from "../session/waiter.js";
@@ -30,7 +33,10 @@ export type ToolErrorCode =
   | "WAIT_IN_PROGRESS"
   | "HELPER_UNAVAILABLE"
   | "CAPTURE_FAILED"
-  | "BAD_REGION";
+  | "BAD_REGION"
+  | "FILE_NOT_FOUND"
+  | "IDE_CLI_NOT_FOUND"
+  | "IDE_CLI_FAILED";
 
 export class ToolError extends Error {
   constructor(
@@ -52,18 +58,35 @@ export type Target =
       space?: "screen" | "screenshot";
       screenshotId?: string;
     }
-  | { kind: "none" };
+  | { kind: "none" }
+  | SmartTarget;
 
 export interface ResolvedTarget {
   rect: Rect;
-  method: "explicit";
+  /** explicit: a rect from the agent; uia / ocr / ocr_gutter: found on screen. */
+  method: "explicit" | "uia" | "ocr" | "ocr_gutter";
   confidence: number;
+  detail?: "view" | "icon";
+  clipped?: boolean;
 }
 
 export interface UnresolvedTarget {
   target: Target;
-  reason: "off_screen" | "unknown_screenshot";
+  reason: "off_screen" | "unknown_screenshot" | LocateFailure;
 }
+
+export interface CoordinatorDeps {
+  launch: () => Promise<OverlayHandle>;
+  helper?: Helper;
+  /** Opens a file at a line in the IDE whose executable is exePath (VS Code CLI); throws OpenFileError. */
+  openFile?: (file: string, line: number, column: number, exePath?: string) => Promise<void>;
+  fileExists?: (file: string) => boolean;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** Room around the highlights in a verify preview, so the agent sees what they sit in. */
+const PREVIEW_MARGIN = 80;
+const PREVIEW_MAX_WIDTH = 1000;
 
 export interface IdeWindowSummary {
   title: string;
@@ -117,10 +140,21 @@ export class Coordinator {
   private starting = false;
   private restarts = 0;
   private background: Promise<void> = Promise.resolve();
-  private ide: { hwnd: number; title: string } | null = null;
+  private ide: { hwnd: number; title: string; path?: string } | null = null;
+  private workspace: string | undefined;
   private readonly screenshots = new ScreenshotStore();
+  private readonly locator: Locator | null;
 
-  constructor(private readonly deps: { launch: () => Promise<OverlayHandle>; helper?: Helper }) {}
+  constructor(private readonly deps: CoordinatorDeps) {
+    this.locator = deps.helper
+      ? new Locator({
+          helper: deps.helper,
+          openFile: (file, line) => this.openInIde(file, line, 1),
+          fileExists: (file) => this.fileExists(file),
+          sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+        })
+      : null;
+  }
 
   async startSession({
     title,
@@ -149,8 +183,10 @@ export class Coordinator {
         throw new ToolError("LAUNCH_FAILED", `Could not start the overlay: ${(error as Error).message}`);
       }
 
+      this.workspace = workspace;
       const ide = await this.findIde(workspace);
-      this.ide = ide && { hwnd: ide.hwnd, title: ide.title };
+      this.ide = ide && { hwnd: ide.hwnd, title: ide.title, path: ide.path || undefined };
+      if (ide) this.warmUp(ide.hwnd);
 
       const session = new Session();
       this.session = session;
@@ -175,27 +211,28 @@ export class Coordinator {
     targets: Target[];
     mode: StepMode;
     label?: string;
-  }): Promise<{ stepId: string; resolved: ResolvedTarget[]; unresolved: UnresolvedTarget[] }> {
+    /** Also return a screenshot of the area with the highlights outlined. */
+    verify?: boolean;
+  }): Promise<{
+    stepId: string;
+    resolved: ResolvedTarget[];
+    unresolved: UnresolvedTarget[];
+    preview?: { png: string; meta: ObserveMeta };
+  }> {
     const session = this.requireActive();
     const bounds = this.overlay?.connection.display().boundsPhysical;
+    const results = await this.resolveTargets(input.targets);
     const resolved: ResolvedTarget[] = [];
     const unresolved: UnresolvedTarget[] = [];
 
-    for (const target of input.targets) {
-      if (target.kind === "none") continue;
-      let rect: Rect = { x: target.x, y: target.y, w: target.w, h: target.h };
-      if (target.space === "screenshot") {
-        const shot = target.screenshotId ? this.screenshots.get(target.screenshotId) : undefined;
-        if (!shot) {
-          unresolved.push({ target, reason: "unknown_screenshot" });
-          continue;
-        }
-        rect = screenshotToScreen(rect, shot);
-      }
-      const clipped = bounds ? clipToBounds(rect, bounds) : rect;
-      if (clipped) resolved.push({ rect: clipped, method: "explicit", confidence: 1 });
+    input.targets.forEach((target, i) => {
+      const result = results[i];
+      if (result === null) return;
+      if ("reason" in result) return unresolved.push({ target, reason: result.reason });
+      const clipped = bounds ? clipToBounds(result.rect, bounds) : result.rect;
+      if (clipped) resolved.push({ ...result, rect: clipped });
       else unresolved.push({ target, reason: "off_screen" });
-    }
+    });
 
     const highlights = resolved.map((r) => r.rect);
     const step: StepInput = {
@@ -209,7 +246,76 @@ export class Coordinator {
     };
     const effects = session.showStep(step);
     this.apply(effects);
-    return { stepId: effects.render.stepId, resolved, unresolved };
+    const preview = input.verify && highlights.length ? await this.preview(highlights) : undefined;
+    return { stepId: effects.render.stepId, resolved, unresolved, ...(preview && { preview }) };
+  }
+
+  /**
+   * Opens a file at a line in VS Code (relative paths are inside the lesson's workspace). Not a
+   * hands-on step: it brings code on screen so a lesson can talk about it.
+   */
+  async openLocation({ file, line, column = 1 }: { file: string; line: number; column?: number }): Promise<{ file: string; line: number }> {
+    const absolute = this.resolvePath(file);
+    if (!absolute || !this.fileExists(absolute)) throw new ToolError("FILE_NOT_FOUND", `No such file: ${file}`);
+    if (!this.ide) await this.refreshIde();
+    try {
+      await this.openInIde(absolute, line, column);
+    } catch (error) {
+      if (!(error instanceof OpenFileError)) throw error;
+      throw new ToolError(error.reason === "ide_cli_not_found" ? "IDE_CLI_NOT_FOUND" : "IDE_CLI_FAILED", error.message);
+    }
+    return { file: absolute, line };
+  }
+
+  /** Explicit rects become screen rects; ui / text / lines targets go through the locator. Null: nothing to draw. */
+  private async resolveTargets(targets: Target[]) {
+    type Result = { rect: Rect; method: ResolvedTarget["method"]; confidence: number; detail?: "view" | "icon"; clipped?: boolean };
+    const results: Array<Result | { reason: UnresolvedTarget["reason"] } | null> = targets.map(() => null);
+    const smart: Array<{ index: number; target: SmartTarget }> = [];
+
+    targets.forEach((target, i) => {
+      if (target.kind === "none") return;
+      if (target.kind !== "rect") return smart.push({ index: i, target });
+      let rect: Rect = { x: target.x, y: target.y, w: target.w, h: target.h };
+      if (target.space === "screenshot") {
+        const shot = target.screenshotId ? this.screenshots.get(target.screenshotId) : undefined;
+        if (!shot) return (results[i] = { reason: "unknown_screenshot" });
+        rect = screenshotToScreen(rect, shot);
+      }
+      results[i] = { rect, method: "explicit", confidence: 1 };
+    });
+
+    if (smart.length) {
+      if (!this.locator) {
+        smart.forEach(({ index }) => (results[index] = { reason: "helper_unavailable" }));
+      } else {
+        if (!this.ide) await this.refreshIde();
+        const ide = this.ide && { hwnd: this.ide.hwnd, workspace: this.workspace };
+        const located = await this.locator.locate(
+          smart.map((s) => s.target),
+          ide,
+        );
+        smart.forEach(({ index }, k) => (results[index] = located[k]));
+      }
+    }
+    return results;
+  }
+
+  private async preview(highlights: Rect[]): Promise<{ png: string; meta: ObserveMeta } | undefined> {
+    if (!this.deps.helper) return undefined;
+    try {
+      const display = (await this.deps.helper.request<{ bounds: Rect }>("display_info")).bounds;
+      const area = clipToBounds(inflate(union(highlights)!, PREVIEW_MARGIN), display);
+      if (!area) return undefined;
+      return await this.capture(area, "region", {
+        grid: false,
+        maxWidth: PREVIEW_MAX_WIDTH,
+        boxes: highlights.map((r) => [r.x, r.y, r.w, r.h]),
+      });
+    } catch (error) {
+      if (error instanceof HelperError) return undefined; // The step is shown either way.
+      throw error;
+    }
   }
 
   async showCard({ title, body, label }: { title: string; body: string; label?: string }): Promise<{ stepId: string }> {
@@ -307,31 +413,27 @@ export class Coordinator {
 
       const clipped = clipToBounds(area, display);
       if (!clipped) throw new ToolError("BAD_REGION", "The region is outside the screen.");
-      const capture = await helper.request<CaptureResult>("capture", { ...clipped, grid, maxWidth });
-      const shot = this.screenshots.add({
-        origin: capture.origin,
-        scale: capture.scale,
-        width: capture.width,
-        height: capture.height,
-      });
-      return {
-        png: capture.png,
-        meta: {
-          screenshot_id: shot.id,
-          source,
-          origin: shot.origin,
-          scale: shot.scale,
-          width: shot.width,
-          height: shot.height,
-          ...(windowTitle && { window_title: windowTitle }),
-          ...(note && { note }),
-        },
-      };
+      const { png, meta } = await this.capture(clipped, source, { grid, maxWidth });
+      return { png, meta: { ...meta, ...(windowTitle && { window_title: windowTitle }), ...(note && { note }) } };
     } catch (error) {
       if (!(error instanceof HelperError)) throw error;
       if (error.code === "CAPTURE_FAILED") throw new ToolError("CAPTURE_FAILED", error.message);
       throw new ToolError("HELPER_UNAVAILABLE", "win-helper failed: " + error.message);
     }
+  }
+
+  /** Captures a screen area and remembers it, so rects read off the image can be mapped back. */
+  private async capture(
+    area: Rect,
+    source: ObserveMeta["source"],
+    options: { grid: boolean; maxWidth: number; boxes?: number[][] },
+  ): Promise<{ png: string; meta: ObserveMeta }> {
+    const capture = await this.requireHelper().request<CaptureResult>("capture", { ...area, ...options });
+    const shot = this.screenshots.add({ origin: capture.origin, scale: capture.scale, width: capture.width, height: capture.height });
+    return {
+      png: capture.png,
+      meta: { screenshot_id: shot.id, source, origin: shot.origin, scale: shot.scale, width: shot.width, height: shot.height },
+    };
   }
 
   /** Resolves once background work (overlay restarts and shutdowns) has settled. */
@@ -357,6 +459,38 @@ export class Coordinator {
     } catch {
       return null;
     }
+  }
+
+  private async refreshIde() {
+    const ide = await this.findIde(this.workspace);
+    if (ide) this.ide = { hwnd: ide.hwnd, title: ide.title, path: ide.path || undefined };
+  }
+
+  /** Chromium builds VS Code's accessibility tree on the first UIA query; do it before the first step. */
+  private warmUp(hwnd: number) {
+    const helper = this.deps.helper;
+    if (!helper) return;
+    this.inBackground(async () => {
+      try {
+        await helper.request("uia_snapshot", { hwnd, minNodes: 30, maxNodes: 50 });
+      } catch {
+        // Only a head start; locating retries on its own.
+      }
+    });
+  }
+
+  private openInIde(file: string, line: number, column: number): Promise<void> {
+    if (!this.deps.openFile) return Promise.reject(new OpenFileError("ide_cli_not_found", "No IDE CLI is configured."));
+    return this.deps.openFile(file, line, column, this.ide?.path);
+  }
+
+  private fileExists(file: string): boolean {
+    return (this.deps.fileExists ?? existsSync)(file);
+  }
+
+  private resolvePath(file: string): string | null {
+    if (path.isAbsolute(file)) return file;
+    return this.workspace ? path.join(this.workspace, file) : null;
   }
 
   /** After the user typed a question, put keyboard focus back into VS Code. */
