@@ -4,7 +4,7 @@ import { UI_ELEMENTS, type UiElement } from "../locator/vscode-layout.js";
 import { Coordinator, ToolError } from "./coordinator.js";
 import { GUIDE_URI, guideDir, listGuide, promptText, readGuide, SERVER_INSTRUCTIONS } from "./guide.js";
 
-const VERSION = "0.1.0";
+export const VERSION = "0.1.0";
 
 const uiElement = z.enum(UI_ELEMENTS as [UiElement, ...UiElement[]]);
 
