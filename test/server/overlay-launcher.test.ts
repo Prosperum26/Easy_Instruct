@@ -28,6 +28,17 @@ describe("launchOverlay", () => {
     expect(overlay.connection.display.boundsPhysical.w).toBe(1920);
   });
 
+  it("starts Electron as Electron even when the agent runs inside VS Code", async () => {
+    overlay = await launchOverlay({
+      electronPath: process.execPath,
+      mainPath: fakeOverlay,
+      connectTimeoutMs: 5000,
+      stopGraceMs: 300,
+      env: { ...process.env, FAKE_OVERLAY: "hello", ELECTRON_RUN_AS_NODE: "1" },
+    });
+    expect(overlay.connection.display.boundsPhysical.w).toBe(1920);
+  });
+
   it("keeps the overlay's stdout away from the MCP stdout", async () => {
     overlay = await launchFake("hello");
     expect(overlay.process.stdout).toBeNull();

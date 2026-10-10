@@ -4,7 +4,10 @@
 //   crash-early     - exit with code 3 before connecting
 //   crash-later     - say hello, then exit with code 4 after 100 ms
 //   stubborn        - say hello, ignore close and keep running
+// Like Electron, it cannot be an overlay when ELECTRON_RUN_AS_NODE is set (it exits with code 5).
 import WebSocket from "ws";
+
+if (process.env.ELECTRON_RUN_AS_NODE) process.exit(5);
 
 const arg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const mode = process.env.FAKE_OVERLAY ?? "hello";

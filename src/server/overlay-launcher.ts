@@ -34,10 +34,13 @@ export async function launchOverlay({
   env = process.env,
 }: LaunchOptions): Promise<LaunchedOverlay> {
   const channel = await OverlayChannel.listen();
+  // Agents running inside VS Code (its extension host) pass ELECTRON_RUN_AS_NODE=1 down to MCP
+  // servers; Electron would then start as plain Node and the overlay could not open.
+  const { ELECTRON_RUN_AS_NODE: _runAsNode, ...childEnv } = env;
   const child = spawn(electronPath, [mainPath, `--port=${channel.port}`, `--token=${channel.token}`], {
     stdio: ["ignore", "ignore", "pipe"],
     windowsHide: true,
-    env,
+    env: childEnv,
   });
   child.stderr?.on("data", (chunk) => {
     if (DEBUG) process.stderr.write(chunk);
