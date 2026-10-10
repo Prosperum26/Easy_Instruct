@@ -66,9 +66,19 @@ AI Agent ──MCP stdio──▶ MCP Server (TypeScript) ──WebSocket──�
 | `wait_for_user` | Chờ người dùng: Tiếp, Xong, Bỏ qua, Hỏi, Thoát (hoặc timeout) | M2 |
 | `end_session` | Thẻ tổng kết, tắt overlay khi người dùng đóng | M2 |
 | `observe` | Chụp cửa sổ VS Code / toàn màn hình / một vùng, kèm lưới tọa độ, gửi ảnh cho agent | M3 |
-| `open_location` | Mở file đúng dòng trong IDE | M4 |
+| `open_location` | Mở file đúng dòng trong VS Code (qua CLI của VS Code) | M4 |
 
-Vùng sáng nhận `{ kind: "rect", x, y, w, h }`:
+Vùng sáng (`targets` của `show_step`, tối đa 3) có thể **mô tả** thay vì đưa tọa độ:
+
+| Target | Ví dụ | Cách định vị |
+|---|---|---|
+| `ui` | `{ kind: "ui", element: "terminal" }` | UI Automation. Phần có sẵn: `editor`, `status_bar`, `activity_bar`, `sidebar`, `panel`, `terminal`, `tabs`, `active_tab`, và các view `explorer` / `search` / `run_debug` / `source_control` / `extensions` (view đang mở → cả sidebar; đang đóng → icon để bấm mở, `detail: "icon"`) |
+| `text` | `{ kind: "text", text: "README.md", within: "explorer" }` | Tên trong UI Automation trước, OCR sau; bỏ dấu, chấp nhận lỗi OCR nhỏ; `occurrence` để chọn lần xuất hiện thứ n |
+| `lines` | `{ kind: "lines", file: "src/app.py", start: 12, end: 30 }` | Mở file đúng dòng bằng CLI của VS Code, OCR cột số dòng (bỏ sticky scroll, xử lý dòng wrap/CodeLens, code bị fold) |
+
+Mỗi vùng tìm được trả `method` (`uia` / `ocr` / `ocr_gutter` / `explicit`) và `confidence`; không tìm được thì vào `unresolved` kèm lý do (`not_visible`, `text_not_found`, `line_not_visible`, `line_numbers_hidden`, `file_not_found`…). `verify: true` trả thêm ảnh khu vực đó có vẽ khung để agent tự kiểm tra.
+
+Khi không mô tả được, vùng sáng vẫn nhận `{ kind: "rect", x, y, w, h }`:
 
 - `space: "screen"` (mặc định): pixel vật lý của màn hình chính, đọc thẳng từ nhãn lưới trên ảnh `observe`.
 - `space: "screenshot"` + `screenshot_id`: pixel trên ảnh `observe` (đã thu nhỏ); server tự quy đổi.
@@ -82,7 +92,8 @@ Vùng lấn ra ngoài màn hình được cắt bớt; vùng nằm hẳn ngoài 
 - **M1** ✅ Overlay Electron: lớp mờ, vùng sáng, bong bóng.
 - **M2** ✅ MCP server: session, Lùi/Tiếp cục bộ, hỏi đáp, kênh WebSocket tới overlay, tự khởi động lại overlay khi crash.
 - **M3** ✅ `observe` cho agent, tìm cửa sổ VS Code theo workspace, trả focus về VS Code sau khi hỏi, win-helper chạy được cả khi Smart App Control bật.
-- **M4** ⏳ Tự định vị: panel (UI Automation), chữ (OCR), dòng code (`open_location` + OCR số dòng).
+- **M4** ✅ Tự định vị: phần giao diện VS Code (UI Automation), chữ (tên UIA hoặc OCR), dòng code (`open_location` + OCR số dòng); `verify` kèm ảnh preview.
+- **M5** ⏳ Bước `click` tự nhận click trúng vùng sáng, định vị lại khi cửa sổ di chuyển, ẩn overlay khi chuyển sang app khác.
 
 ## Chạy thử
 
@@ -118,4 +129,5 @@ Windows 11 có thể bật **Smart App Control**, chặn `win-helper.exe` vì fi
 - Node.js ≥ 20
 - Windows PowerShell 5.1 (có sẵn trong Windows) cho win-helper
 - Tuỳ chọn: .NET 10 SDK để build `win-helper.exe` và chạy test C#
-- VS Code (lệnh `code` trong PATH sẽ cần từ M4)
+- VS Code (không cần lệnh `code` trong PATH: server tự tìm CLI cạnh `Code.exe`)
+- OCR của Windows (có sẵn; máy chỉ có gói tiếng Anh thì chữ tiếng Việt được tìm qua tên UI Automation, OCR dùng cho số dòng, tên file, chữ không dấu)
