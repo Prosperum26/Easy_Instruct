@@ -63,7 +63,7 @@ AI Agent ──MCP stdio──▶ MCP Server (TypeScript) ──WebSocket──�
 | `start_session` | Bật overlay, hiện thẻ giới thiệu | M2 |
 | `show_step` | Hiện một bước: vùng sáng + bong bóng (`read` / `click` / `do`) | M2 |
 | `show_card` | Hiện thẻ ở giữa màn hình | M2 |
-| `wait_for_user` | Chờ người dùng: Tiếp, Xong, Bỏ qua, Hỏi, Thoát (hoặc timeout) | M2 |
+| `wait_for_user` | Chờ người dùng: Tiếp, Xong, Bỏ qua, click trúng vùng sáng (`clicked`), Hỏi, Thoát (hoặc timeout) | M2, M5 |
 | `end_session` | Thẻ tổng kết, tắt overlay khi người dùng đóng | M2 |
 | `observe` | Chụp cửa sổ VS Code / toàn màn hình / một vùng, kèm lưới tọa độ, gửi ảnh cho agent | M3 |
 | `open_location` | Mở file đúng dòng trong VS Code (qua CLI của VS Code) | M4 |
@@ -93,7 +93,15 @@ Vùng lấn ra ngoài màn hình được cắt bớt; vùng nằm hẳn ngoài 
 - **M2** ✅ MCP server: session, Lùi/Tiếp cục bộ, hỏi đáp, kênh WebSocket tới overlay, tự khởi động lại overlay khi crash.
 - **M3** ✅ `observe` cho agent, tìm cửa sổ VS Code theo workspace, trả focus về VS Code sau khi hỏi, win-helper chạy được cả khi Smart App Control bật.
 - **M4** ✅ Tự định vị: phần giao diện VS Code (UI Automation), chữ (tên UIA hoặc OCR), dòng code (`open_location` + OCR số dòng); `verify` kèm ảnh preview.
-- **M5** ⏳ Bước `click` tự nhận click trúng vùng sáng, định vị lại khi cửa sổ di chuyển, ẩn overlay khi chuyển sang app khác.
+- **M5** ✅ Bước `click` tự hoàn tất khi người dùng click trúng vùng sáng; vùng sáng đi theo cửa sổ VS Code khi nó di chuyển/đổi kích thước; overlay ẩn khi bạn sang app khác và hiện lại khi quay về; `Ctrl+Alt+R` định vị lại.
+- **M6** ⏳ Prompt dạy học hoàn chỉnh, repo mẫu, đóng gói.
+
+### Trong lúc học
+
+- **Bước `click`**: bạn click vào vùng sáng là tự sang bước (nút *Bỏ qua* vẫn còn). Chỉ trong bước này helper mới đọc trạng thái nút chuột chính và vị trí con trỏ (không đọc bàn phím).
+- **Di chuyển / đổi kích thước VS Code**: vùng sáng tự đi theo sau khi cửa sổ đứng yên khoảng 1 giây.
+- **Sang app khác** (hoặc thu nhỏ VS Code): overlay tự ẩn, quay lại VS Code là hiện lại. Khi AI đưa ra bước mới, VS Code được đưa lên trước.
+- **Đã cuộn editor hoặc đổi tab** mà vùng sáng lệch: bấm `Ctrl+Alt+R`.
 
 ## Chạy thử
 
@@ -108,7 +116,7 @@ npm run overlay:demo -- --step=4              # mở thẳng bước 4
 npm run overlay:demo -- --rect=100,200,600,80 # tô sáng đúng tọa độ pixel vật lý để kiểm tra DPI
 ```
 
-Phím tắt: `Ctrl+Alt+H` ẩn/hiện lớp phủ, `Ctrl+Alt+Q` thoát. Đặt `EASY_INSTRUCT_DEBUG=1` để xem log; thêm `--capture=out.png` để overlay tự chụp phần nó vẽ rồi thoát.
+Phím tắt: `Ctrl+Alt+H` ẩn/hiện lớp phủ, `Ctrl+Alt+R` định vị lại vùng sáng, `Ctrl+Alt+Q` thoát. Đặt `EASY_INSTRUCT_DEBUG=1` để xem log; thêm `--capture=out.png` để overlay tự chụp phần nó vẽ rồi thoát.
 
 ### Dùng với Claude Code
 

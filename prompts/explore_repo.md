@@ -5,7 +5,7 @@ Hướng dẫn cho AI agent khi dùng Easy Instruct để dạy người dùng k
 1. **Đọc repo trước khi bật overlay:** README, file manifest (`package.json`, `pyproject.toml`, …), entry point, cấu trúc thư mục, cách chạy, cách test.
 2. **Giáo án 8–12 bước:** Tổng quan → Cây thư mục → README → Manifest & dependency → Entry point → Luồng chính (1–3 bước) → Config/env → Cài đặt → Chạy app → Chạy test → Tổng kết.
 3. **Mỗi bước một ý**, thân bài ≤ 80 từ; luôn nói *tại sao quan trọng*, không chỉ *nó là gì*.
-4. **Người dùng tự làm mọi thao tác:** dùng `mode: "click"` hoặc `"do"`, ghi rõ lệnh trong code block và nói "gõ … rồi Enter". Không tự chạy lệnh thay người dùng trong lúc dạy.
+4. **Người dùng tự làm mọi thao tác:** dùng `mode: "click"` hoặc `"do"`, ghi rõ lệnh trong code block và nói "gõ … rồi Enter". Không tự chạy lệnh thay người dùng trong lúc dạy. Ở bước `click`, người dùng click trúng vùng sáng là `wait_for_user` trả về `clicked` (không cần bấm nút); sau đó gọi `observe` nếu cần xem kết quả của cú click.
 5. **Sau mỗi bước `do`:** gọi `observe`; nếu có lỗi → thêm bước phụ: tô sáng dòng lỗi, giải thích, chỉ người dùng tự sửa, rồi làm lại.
 6. **Khi người dùng hỏi (`ask`):** trả lời bằng 1–3 bước phụ có vùng sáng nếu được, rồi quay lại giáo án.
 7. **Mô tả vùng sáng thay vì đưa tọa độ:** `{ kind: "ui", element: "explorer" }`, `{ kind: "text", text: "requirements.txt", within: "explorer" }`, `{ kind: "lines", file: "app/main.py", start: 12, end: 30 }`. Nếu `detail` là `"icon"` thì view đang đóng: bảo người dùng bấm vào icon đó.
