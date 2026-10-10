@@ -54,26 +54,33 @@ AI Agent ──MCP stdio──▶ MCP Server (TypeScript) ──WebSocket──�
 | `prompts/` | Hướng dẫn sư phạm cho agent |
 | `config/` | Bảng ánh xạ UI của VS Code |
 
-## MCP tools (dự kiến)
+## MCP tools
 
-| Tool | Tác dụng |
-|---|---|
-| `start_session` | Bật overlay, hiện thẻ giới thiệu |
-| `show_step` | Hiện một bước: vùng sáng + bong bóng (`read` / `click` / `do`) |
-| `wait_for_user` | Chờ người dùng: Tiếp, Xong, click trúng vùng sáng, Hỏi, Thoát |
-| `observe` | Chụp cửa sổ IDE (có thể kèm lưới tọa độ) gửi cho agent |
-| `open_location` | Mở file đúng dòng trong IDE |
-| `show_card` | Hiện thẻ ở giữa màn hình |
-| `end_session` | Thẻ tổng kết, tắt overlay |
+| Tool | Tác dụng | Có từ |
+|---|---|---|
+| `start_session` | Bật overlay, hiện thẻ giới thiệu | M2 |
+| `show_step` | Hiện một bước: vùng sáng + bong bóng (`read` / `click` / `do`) | M2 |
+| `show_card` | Hiện thẻ ở giữa màn hình | M2 |
+| `wait_for_user` | Chờ người dùng: Tiếp, Xong, Bỏ qua, Hỏi, Thoát (hoặc timeout) | M2 |
+| `end_session` | Thẻ tổng kết, tắt overlay khi người dùng đóng | M2 |
+| `observe` | Chụp cửa sổ IDE (có thể kèm lưới tọa độ) gửi cho agent | M3 |
+| `open_location` | Mở file đúng dòng trong IDE | M4 |
+
+Ở M2, vùng sáng nhận tọa độ `{ kind: "rect", x, y, w, h }` theo pixel vật lý của màn hình chính; vùng lấn ra ngoài màn hình được cắt bớt, vùng nằm hẳn ngoài màn hình được báo trong `unresolved` và bước được hiện dạng thẻ.
 
 ## Trạng thái
 
-🚧 Đang phát triển. Đã xong **M1**: overlay Electron vẽ lớp mờ, vùng sáng và bong bóng từ tọa độ cố định.
+🚧 Đang phát triển.
+
+- **M1** ✅ Overlay Electron: lớp mờ, vùng sáng, bong bóng.
+- **M2** ✅ MCP server: session, Lùi/Tiếp cục bộ, hỏi đáp, kênh WebSocket tới overlay, tự khởi động lại overlay khi crash.
+- **M3** ⏳ Chụp màn hình cho agent, tìm cửa sổ VS Code, DPI (win-helper .NET).
 
 ## Chạy thử
 
 ```bash
 npm install
+npm run build
 npm test                 # unit test
 npm run typecheck
 npm run overlay:demo     # demo các bước (đọc / click / thực hành / nhiều vùng sáng)
@@ -82,6 +89,15 @@ npm run overlay:demo -- --rect=100,200,600,80 # tô sáng đúng tọa độ pix
 ```
 
 Phím tắt: `Ctrl+Alt+H` ẩn/hiện lớp phủ, `Ctrl+Alt+Q` thoát. Đặt `EASY_INSTRUCT_DEBUG=1` để xem log; thêm `--capture=out.png` để overlay tự chụp phần nó vẽ rồi thoát.
+
+### Dùng với Claude Code
+
+```bash
+npm run build
+claude mcp add easy-instruct -- node C:/Dev/Project/Easy_Instruct/dist/server/index.js
+```
+
+Sau đó nhờ Claude dạy bạn một repo; Claude sẽ gọi `start_session`, `show_step`, `wait_for_user`… và overlay hiện trên màn hình.
 
 ## Yêu cầu (dự kiến)
 
