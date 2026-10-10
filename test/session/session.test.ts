@@ -200,3 +200,71 @@ describe("Session exit and ending", () => {
     expect(session.takeEvent()).toEqual({ event: "exit", stepId: "s1", reason: "overlay_crashed" });
   });
 });
+
+describe("Session clicks on click steps", () => {
+  let session: Session;
+  beforeEach(() => {
+    session = new Session();
+    session.showStep(step("Read", { mode: "read" }));
+    session.showStep(step("Click", { mode: "click", actionButtons: ["ask", "skip"] }));
+  });
+
+  it("queues clicked when the newest click step is clicked", () => {
+    expect(session.handleClick("s2")).toEqual({ status: "Đang chờ AI…" });
+    expect(session.takeEvent()).toEqual({ event: "clicked", stepId: "s2" });
+  });
+
+  it("counts a click once while waiting for the agent", () => {
+    session.handleClick("s2");
+    expect(session.handleClick("s2")).toEqual({});
+    session.takeEvent();
+    expect(session.takeEvent()).toBeUndefined();
+  });
+
+  it("moves forward locally when a click step seen before is clicked again", () => {
+    session.showStep(step("After"));
+    press(session, "s3", "back");
+    expect(session.handleClick("s2").render?.stepId).toBe("s3");
+    expect(session.takeEvent()).toBeUndefined();
+  });
+
+  it("ignores clicks for steps that are not click steps or not on screen", () => {
+    press(session, "s2", "back");
+    expect(session.handleClick("s1")).toEqual({});
+    expect(session.handleClick("s2")).toEqual({});
+    expect(session.takeEvent()).toBeUndefined();
+  });
+
+  it("ignores clicks once the lesson is over", () => {
+    press(session, "s2", "exit");
+    session.takeEvent();
+    expect(session.handleClick("s2")).toEqual({});
+  });
+});
+
+describe("Session.updateHighlights", () => {
+  let session: Session;
+  beforeEach(() => {
+    session = new Session();
+    session.showStep(step("A"));
+    session.showStep(step("B"));
+  });
+
+  it("redraws the step on screen with the new highlights", () => {
+    const effects = session.updateHighlights("s2", [{ x: 1, y: 2, w: 3, h: 4 }]);
+    expect(effects.render).toMatchObject({ stepId: "s2", kind: "bubble", highlights: [{ x: 1, y: 2, w: 3, h: 4 }] });
+  });
+
+  it("turns a step whose targets are gone into a card", () => {
+    expect(session.updateHighlights("s2", []).render).toMatchObject({ kind: "card", highlights: [] });
+  });
+
+  it("stores updates for a step that is not on screen and shows them when going back", () => {
+    expect(session.updateHighlights("s1", [{ x: 9, y: 9, w: 9, h: 9 }])).toEqual({});
+    expect(press(session, "s2", "back").render?.highlights).toEqual([{ x: 9, y: 9, w: 9, h: 9 }]);
+  });
+
+  it("ignores unknown steps", () => {
+    expect(session.updateHighlights("s99", [])).toEqual({});
+  });
+});

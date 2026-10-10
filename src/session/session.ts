@@ -130,6 +130,29 @@ export class Session {
     return { status: WAITING_STATUS };
   }
 
+  /** A click inside the highlight of a click step: like Next, but only for click steps. */
+  handleClick(stepId: string): Effects {
+    const current = this.current;
+    if (this.phase !== "active" || !current || current.stepId !== stepId || current.input.mode !== "click") return {};
+    if (this.cursor < this.steps.length - 1) {
+      this.cursor++;
+      return { render: this.renderAt(this.cursor) };
+    }
+    if (this.awaitingAgent) return {};
+    this.awaitingAgent = true;
+    this.queue.push({ event: "clicked", stepId });
+    return { status: WAITING_STATUS };
+  }
+
+  /** New highlights for a step (after re-locating its targets); redraws it if it is on screen. */
+  updateHighlights(stepId: string, highlights: Rect[]): Effects {
+    const index = this.steps.findIndex((step) => step.stepId === stepId);
+    if (index < 0) return {};
+    const record = this.steps[index];
+    record.input = { ...record.input, highlights, kind: highlights.length ? "bubble" : "card" };
+    return index === this.cursor ? { render: this.renderAt(index) } : {};
+  }
+
   takeEvent(): UserEvent | undefined {
     return this.queue.shift();
   }
