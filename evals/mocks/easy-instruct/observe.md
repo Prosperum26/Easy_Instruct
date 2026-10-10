@@ -1,0 +1,1 @@
+{"screenshot_id":"shot-1","source":"ide","origin":{"x":0,"y":0},"scale":0.83,"width":1600,"height":850,"window_title":"README.md - todo-api - Visual Studio Code","note":"Image omitted in this test. VS Code shows the todo-api repository; the terminal is idle."}

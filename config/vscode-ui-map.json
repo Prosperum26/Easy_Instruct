@@ -1,12 +1,18 @@
 {
-  "explorer": { "uia": { "nameContains": "Explorer" }, "ocrHeader": "EXPLORER" },
-  "terminal": { "uia": { "nameContains": "Terminal" }, "ocrHeader": "TERMINAL" },
-  "search": { "uia": { "nameContains": "Search" }, "ocrHeader": "SEARCH" },
-  "run_debug": { "uia": { "nameContains": "Run and Debug" }, "ocrHeader": "RUN AND DEBUG" },
-  "editor": { "uia": { "nameContains": "editor" } },
-  "tabs": { "uia": { "controlType": "Tab" } },
-  "activity_bar": { "uia": { "nameContains": "Active View Switcher" } },
-  "status_bar": { "uia": { "nameContains": "Status Bar" } },
-  "panel": { "uia": { "nameContains": "Panel" } },
-  "sidebar": { "uia": { "nameContains": "Side Bar" } }
+  "$comment": "How src/locator/vscode-layout.ts recognises VS Code parts in a UI Automation snapshot. Only AutomationIds (DOM ids), CSS classes and codicons are used, never names, which change with the UI language and carry keyboard shortcuts.",
+  "editorPart": { "id": "workbench.parts.editor" },
+  "statusBar": { "id": "workbench.parts.statusbar" },
+  "viewSwitcher": { "type": "Tab", "classes": ["actions-container"] },
+  "sidebarSash": { "classes": ["monaco-sash", "primary-sidebar-sash"] },
+  "terminal": { "classes": ["terminal", "xterm"] },
+  "editorTab": { "type": "TabItem", "classes": ["tab"] },
+  "activeClass": "active",
+  "checkedClass": "checked",
+  "views": {
+    "explorer": "codicon-explorer-view-icon",
+    "search": "codicon-search-view-icon",
+    "run_debug": "codicon-run-view-icon",
+    "source_control": "codicon-source-control-view-icon",
+    "extensions": "codicon-extensions-view-icon"
+  }
 }

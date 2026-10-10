@@ -1,0 +1,14 @@
+{
+  "name": "easy-instruct",
+  "owner": {
+    "name": "Phu Hung"
+  },
+  "description": "Easy Instruct, installed from a clone of this repository (run npm install in it first; that also builds it).",
+  "plugins": [
+    {
+      "name": "easy-instruct",
+      "source": "./",
+      "description": "Hands-on lessons on the user's own screen with an overlay, an MCP server and the easy-instruct skill."
+    }
+  ]
+}
