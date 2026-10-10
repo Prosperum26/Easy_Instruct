@@ -298,7 +298,17 @@ describe("Coordinator with win-helper", () => {
     it("finds the VS Code window of the workspace", async () => {
       helper.windows.unshift({ ...helper.windows[0], hwnd: 7, title: "x.ts - other - Visual Studio Code" });
       const result = await coordinator.startSession({ title: "T", intro: "i", workspace: "C:/repos/fastapi-demo" });
-      expect(result.ideWindow).toEqual({ title: "main.py - fastapi-demo - Visual Studio Code", bounds: helper.windows[1].bounds });
+      expect(result.ideWindow).toEqual({
+        title: "main.py - fastapi-demo - Visual Studio Code",
+        bounds: helper.windows[1].bounds,
+        minimized: false,
+      });
+    });
+
+    it("says when the VS Code window is minimized instead of passing its off-screen bounds", async () => {
+      helper.windows[0] = { ...helper.windows[0], minimized: true, bounds: { x: -32000, y: -32000, w: 160, h: 28 } };
+      const result = await coordinator.startSession({ title: "T", intro: "i" });
+      expect(result.ideWindow).toEqual({ title: helper.windows[0].title, bounds: null, minimized: true });
     });
 
     it("still starts when VS Code is not found", async () => {

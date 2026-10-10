@@ -69,7 +69,9 @@ export interface UnresolvedTarget {
 
 export interface IdeWindowSummary {
   title: string;
-  bounds: Rect;
+  /** Null while minimized: Windows then reports meaningless off-screen bounds. */
+  bounds: Rect | null;
+  minimized: boolean;
 }
 
 export interface ObserveMeta {
@@ -160,7 +162,10 @@ export class Coordinator {
       this.apply(
         session.showStep({ kind: "card", title, bodyMd: intro, mode: "read", highlights: [], actionButtons: ["exit", "start"] }),
       );
-      return { sessionId: randomUUID(), ideWindow: ide && { title: ide.title, bounds: ide.bounds } };
+      return {
+        sessionId: randomUUID(),
+        ideWindow: ide && { title: ide.title, bounds: ide.minimized ? null : ide.bounds, minimized: ide.minimized },
+      };
     } finally {
       this.starting = false;
     }
