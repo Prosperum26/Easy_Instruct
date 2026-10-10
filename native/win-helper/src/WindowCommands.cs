@@ -120,9 +120,13 @@ internal static class Args
 {
     public static long RequireLong(JsonObject? args, string name)
     {
-        var node = args?[name];
-        if (node is JsonValue value && value.GetValueKind() == JsonValueKind.Number && value.TryGetValue(out long number))
-            return number;
+        if (args?[name] is JsonValue value && value.GetValueKind() == JsonValueKind.Number)
+        {
+            if (value.TryGetValue(out long whole)) return whole;
+            if (value.TryGetValue(out int small)) return small;
+            if (value.TryGetValue(out double real) && real == Math.Floor(real) && Math.Abs(real) < long.MaxValue)
+                return (long)real;
+        }
         throw new HelperException("BAD_ARGS", $"\"{name}\" must be an integer.");
     }
 

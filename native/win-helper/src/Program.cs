@@ -7,6 +7,7 @@ using WinHelper;
 var dispatcher = new Dispatcher();
 dispatcher.Register("ping", _ => new JsonObject { ["pong"] = true });
 WindowCommands.Register(dispatcher);
+CaptureCommands.Register(dispatcher);
 
 Console.InputEncoding = Encoding.UTF8;
 var stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
