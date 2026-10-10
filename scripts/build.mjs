@@ -16,6 +16,17 @@ await Promise.all([
     sourcemap: true,
   }),
   build({
+    entryPoints: ["src/server/index.ts"],
+    outfile: "dist/server/index.js",
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node20",
+    packages: "external",
+    banner: { js: "#!/usr/bin/env node" },
+    sourcemap: true,
+  }),
+  build({
     entryPoints: ["overlay/renderer/renderer.ts"],
     outdir: `${outdir}/renderer`,
     bundle: true,
@@ -31,4 +42,4 @@ await Promise.all(
   ["index.html", "styles.css"].map((file) => copyFile(`overlay/renderer/${file}`, `${outdir}/renderer/${file}`)),
 );
 
-console.log("Built overlay into", outdir);
+console.log("Built server into dist/server and overlay into", outdir);
