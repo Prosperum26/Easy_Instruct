@@ -11,21 +11,25 @@ export type SmartTarget =
   | { kind: "text"; text: string; within?: UiElement; occurrence?: number }
   | { kind: "lines"; file: string; start: number; end?: number };
 
-export type LocateFailure =
-  | "window_not_found"
-  | "helper_unavailable"
-  | "element_not_found"
-  | "not_visible"
-  | "text_not_found"
-  | "file_not_found"
-  | "ide_cli_not_found"
-  | "ide_cli_failed"
-  | "editor_not_found"
-  | "line_numbers_hidden"
-  | "relative_line_numbers"
-  | "line_not_visible"
-  | "line_folded"
-  | "ocr_failed";
+/** Why a target could not be located; each one has a remedy in skills/easy-instruct/references/recovery.md. */
+export const LOCATE_FAILURES = [
+  "window_not_found",
+  "helper_unavailable",
+  "element_not_found",
+  "not_visible",
+  "text_not_found",
+  "file_not_found",
+  "ide_cli_not_found",
+  "ide_cli_failed",
+  "editor_not_found",
+  "line_numbers_hidden",
+  "relative_line_numbers",
+  "line_not_visible",
+  "line_folded",
+  "ocr_failed",
+] as const;
+
+export type LocateFailure = (typeof LOCATE_FAILURES)[number];
 
 export type Located =
   | {

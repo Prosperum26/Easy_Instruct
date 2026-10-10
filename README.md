@@ -53,7 +53,9 @@ AI Agent ──MCP stdio──▶ MCP Server (TypeScript) ──WebSocket──�
 | `src/shared` | Kiểu dữ liệu, chuyển đổi tọa độ/DPI |
 | `overlay/` | Ứng dụng Electron vẽ lớp phủ |
 | `native/win-helper/` | Mã C# gọi API Windows, chạy dạng exe .NET 10 hoặc qua PowerShell |
-| `prompts/` | Hướng dẫn sư phạm cho agent |
+| `skills/easy-instruct/` | Skill dạy AI cách dùng Easy Instruct: quy trình, chọn target, xử lý lỗi, các flow, bài học mẫu |
+| `evals/` | Kịch bản kiểm thử hành vi của agent (`claude plugin eval`, MCP giả lập) |
+| `.claude-plugin/`, `.mcp.json` | Đóng gói thành Claude Code plugin |
 | `config/` | Bảng ánh xạ UI của VS Code |
 
 ## MCP tools
@@ -94,7 +96,8 @@ Vùng lấn ra ngoài màn hình được cắt bớt; vùng nằm hẳn ngoài 
 - **M3** ✅ `observe` cho agent, tìm cửa sổ VS Code theo workspace, trả focus về VS Code sau khi hỏi, win-helper chạy được cả khi Smart App Control bật.
 - **M4** ✅ Tự định vị: phần giao diện VS Code (UI Automation), chữ (tên UIA hoặc OCR), dòng code (`open_location` + OCR số dòng); `verify` kèm ảnh preview.
 - **M5** ✅ Bước `click` tự hoàn tất khi người dùng click trúng vùng sáng; vùng sáng đi theo cửa sổ VS Code khi nó di chuyển/đổi kích thước; overlay ẩn khi bạn sang app khác và hiện lại khi quay về; `Ctrl+Alt+R` định vị lại.
-- **M6** ⏳ Prompt dạy học hoàn chỉnh, repo mẫu, đóng gói.
+- **M5.5** ✅ Bộ skill `easy-instruct` + MCP instructions/resources/prompts + Claude Code plugin + bộ eval.
+- **M6** ⏳ Repo mẫu, đóng gói phát hành (npm / plugin từ GitHub).
 
 ### Trong lúc học
 
@@ -118,14 +121,31 @@ npm run overlay:demo -- --rect=100,200,600,80 # tô sáng đúng tọa độ pix
 
 Phím tắt: `Ctrl+Alt+H` ẩn/hiện lớp phủ, `Ctrl+Alt+R` định vị lại vùng sáng, `Ctrl+Alt+Q` thoát. Đặt `EASY_INSTRUCT_DEBUG=1` để xem log; thêm `--capture=out.png` để overlay tự chụp phần nó vẽ rồi thoát.
 
-### Dùng với Claude Code
+### Dùng với Claude Code (plugin: MCP server + skill)
+
+Repo này là một Claude Code plugin kèm marketplace riêng. Build trước (plugin chạy `dist/` tại chỗ):
 
 ```bash
-npm run build
-claude mcp add easy-instruct -- node C:/Dev/Project/Easy_Instruct/dist/server/index.js
+npm install && npm run build
+claude plugin marketplace add C:/Dev/Project/Easy_Instruct
+claude plugin install easy-instruct@easy-instruct
 ```
 
-Sau đó nhờ Claude dạy bạn một repo; Claude sẽ gọi `start_session`, `show_step`, `wait_for_user`… và overlay hiện trên màn hình.
+Mở phiên Claude Code mới rồi nói kiểu "dạy mình repo này": skill `easy-instruct` cho Claude biết cách soạn bài, chọn vùng sáng và xử lý lỗi; MCP server mở overlay. Gỡ: `claude plugin uninstall easy-instruct@easy-instruct`.
+
+### Dùng với agent khác (Cursor, Copilot, …)
+
+Thêm MCP server `node <repo>/dist/server/index.js` theo cách của agent đó. Không cần skill: server gửi hướng dẫn tóm tắt lúc kết nối (MCP `instructions`), toàn bộ skill có ở resources `easy-instruct://guide/...`, và có sẵn prompts `explore_repo`, `explain_file`, `run_project`.
+
+### Kiểm thử hành vi của agent
+
+`evals/` chạy các kịch bản (dạy repo, lệnh bị lỗi, câu hỏi ngắn không nên mở overlay) với MCP giả lập. Mỗi lần chạy là lời gọi model thật, tính vào usage:
+
+```bash
+claude plugin eval . --scaffold
+```
+
+`test/guide/skill.test.ts` (chạy trong `npm test`) bảo đảm skill nhắc tới mọi mã lỗi, lý do `unresolved`, event và phần UI mà code có.
 
 ### win-helper và Smart App Control
 

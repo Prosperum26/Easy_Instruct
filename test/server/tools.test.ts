@@ -1,6 +1,9 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { guideDir } from "../../src/server/guide.js";
 import { Coordinator } from "../../src/server/coordinator.js";
 import { createServer } from "../../src/server/tools.js";
 import { explorerAndTerminal } from "../fixtures/uia/vscode-layout.js";
@@ -182,5 +185,50 @@ describe("MCP tools", () => {
     const result = await call("open_location", { file: "C:/definitely/not/here.py", line: 3 });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/^FILE_NOT_FOUND:/);
+  });
+
+
+  describe("guidance for agents", () => {
+    it("sends short instructions that point at the guide", () => {
+      const instructions = client.getInstructions() ?? "";
+      expect(instructions).toContain("easy-instruct://guide/SKILL.md");
+      expect(instructions).toMatch(/user does every action/i);
+      expect(instructions.length).toBeLessThan(2500);
+    });
+
+    it("serves every guide file as a Markdown resource", async () => {
+      const { resources } = await client.listResources();
+      const uris = resources.map((r) => r.uri);
+      expect(uris).toContain("easy-instruct://guide/SKILL.md");
+      expect(uris).toContain("easy-instruct://guide/references/recovery.md");
+      expect(uris).toContain("easy-instruct://guide/references/flows/explore-repo.md");
+      expect(resources.every((r) => r.mimeType === "text/markdown")).toBe(true);
+
+      const { contents } = await client.readResource({ uri: "easy-instruct://guide/references/targets.md" });
+      expect(contents[0]).toMatchObject({ mimeType: "text/markdown" });
+      expect((contents[0] as { text: string }).text).toBe(readFileSync(path.join(guideDir(), "references", "targets.md"), "utf8"));
+    });
+
+    it("offers prompts that carry the workflow and the matching flow", async () => {
+      const { prompts } = await client.listPrompts();
+      expect(prompts.map((p) => p.name).sort()).toEqual(["explain_file", "explore_repo", "run_project"]);
+
+      const workspace = String.raw`C:\repos\todo-api`;
+      const tour = await client.getPrompt({ name: "explore_repo", arguments: { workspace } });
+      const text = (tour.messages[0].content as { text: string }).text;
+      expect(text).toContain(workspace);
+      expect(text).toContain("# Flow: exploring a freshly cloned repository");
+      expect(text).toContain("## The golden rules");
+      expect(text).not.toMatch(/^name: easy-instruct$/m);
+
+      const explain = await client.getPrompt({ name: "explain_file", arguments: { file: "app/main.py", question: "why?" } });
+      expect((explain.messages[0].content as { text: string }).text).toContain("app/main.py");
+    });
+
+    it("names every tool in the skill", async () => {
+      const skill = readFileSync(path.join(guideDir(), "SKILL.md"), "utf8");
+      const { tools } = await client.listTools();
+      for (const tool of tools) expect(skill, tool.name).toContain("`" + tool.name + "`");
+    });
   });
 });

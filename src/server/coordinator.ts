@@ -27,17 +27,27 @@ export interface OverlayHandle {
 import type { Helper } from "../helper-client/helper.js";
 export type { Helper };
 
-export type ToolErrorCode =
-  | "NO_SESSION"
-  | "SESSION_ACTIVE"
-  | "LAUNCH_FAILED"
-  | "WAIT_IN_PROGRESS"
-  | "HELPER_UNAVAILABLE"
-  | "CAPTURE_FAILED"
-  | "BAD_REGION"
-  | "FILE_NOT_FOUND"
-  | "IDE_CLI_NOT_FOUND"
-  | "IDE_CLI_FAILED";
+/** Codes tools return in isError results; each one is explained in skills/easy-instruct/references/recovery.md. */
+export const TOOL_ERROR_CODES = [
+  "NO_SESSION",
+  "SESSION_ACTIVE",
+  "LAUNCH_FAILED",
+  "WAIT_IN_PROGRESS",
+  "HELPER_UNAVAILABLE",
+  "CAPTURE_FAILED",
+  "BAD_REGION",
+  "FILE_NOT_FOUND",
+  "IDE_CLI_NOT_FOUND",
+  "IDE_CLI_FAILED",
+] as const;
+
+export type ToolErrorCode = (typeof TOOL_ERROR_CODES)[number];
+
+/** Reasons show_step reports for explicit rects, besides the locator's. */
+export const RECT_FAILURES = ["off_screen", "unknown_screenshot"] as const;
+
+/** Events wait_for_user can return. */
+export const WAIT_EVENTS = ["next", "clicked", "skip", "done", "ask", "timeout", "exit"] as const;
 
 export class ToolError extends Error {
   constructor(
@@ -73,7 +83,7 @@ export interface ResolvedTarget {
 
 export interface UnresolvedTarget {
   target: Target;
-  reason: "off_screen" | "unknown_screenshot" | LocateFailure;
+  reason: (typeof RECT_FAILURES)[number] | LocateFailure;
 }
 
 export interface CoordinatorDeps {

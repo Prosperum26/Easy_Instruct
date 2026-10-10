@@ -36,7 +36,9 @@
   },
   "files": [
     "dist",
-    "prompts",
-    "config"
+    "skills",
+    "config",
+    ".claude-plugin",
+    ".mcp.json"
   ]
 }

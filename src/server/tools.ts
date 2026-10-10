@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { UI_ELEMENTS, type UiElement } from "../locator/vscode-layout.js";
 import { Coordinator, ToolError } from "./coordinator.js";
+import { GUIDE_URI, guideDir, listGuide, promptText, readGuide, SERVER_INSTRUCTIONS } from "./guide.js";
 
 const VERSION = "0.1.0";
 
@@ -89,8 +90,9 @@ async function respond(work: () => Promise<ToolResult>): Promise<ToolResult> {
 const run = (work: () => Promise<unknown>) => respond(async () => ok(await work()));
 
 /** The Easy Instruct MCP server: tools an agent uses to teach the user step by step on screen. */
-export function createServer(coordinator: Coordinator): McpServer {
-  const server = new McpServer({ name: "easy-instruct", version: VERSION });
+export function createServer(coordinator: Coordinator, options: { guideDir?: string } = {}): McpServer {
+  const server = new McpServer({ name: "easy-instruct", version: VERSION }, { instructions: SERVER_INSTRUCTIONS });
+  registerGuide(server, options.guideDir ?? guideDir());
 
   server.registerTool(
     "start_session",
@@ -255,4 +257,82 @@ export function createServer(coordinator: Coordinator): McpServer {
   );
 
   return server;
+}
+
+/**
+ * The guide (skills/easy-instruct) for clients without skills: every file as a resource, and
+ * prompts that start the common lessons with the workflow and the matching flow included.
+ */
+function registerGuide(server: McpServer, dir: string) {
+  for (const rel of listGuide(dir)) {
+    server.registerResource(
+      `guide/${rel}`,
+      GUIDE_URI + rel,
+      {
+        title: rel === "SKILL.md" ? "Easy Instruct guide" : `Easy Instruct guide: ${rel}`,
+        description: rel === "SKILL.md" ? "Start here: how to teach with Easy Instruct, step by step." : undefined,
+        mimeType: "text/markdown",
+      },
+      async (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/markdown", text: readGuide(dir, rel) }] }),
+    );
+  }
+
+  const user = (text: string) => ({ messages: [{ role: "user" as const, content: { type: "text" as const, text } }] });
+  const where = (workspace?: string) => (workspace ? `the repository at ${workspace}` : "the repository open in VS Code");
+
+  server.registerPrompt(
+    "explore_repo",
+    {
+      title: "Tour a repository",
+      description: "Guided, hands-on tour of a freshly cloned repository on the user's screen.",
+      argsSchema: {
+        workspace: z.string().optional().describe("Absolute path of the repository."),
+        goal: z.string().optional().describe("What the user wants out of it, e.g. 'get it running'."),
+      },
+    },
+    ({ workspace, goal }) =>
+      user(
+        promptText(
+          dir,
+          `Use Easy Instruct to give me a guided, hands-on tour of ${where(workspace)}.${goal ? ` My goal: ${goal}.` : ""}`,
+          "explore-repo.md",
+        ),
+      ),
+  );
+
+  server.registerPrompt(
+    "explain_file",
+    {
+      title: "Explain a file",
+      description: "Walk through one file or function on screen, highlighting the lines that matter.",
+      argsSchema: {
+        file: z.string().describe("The file, absolute or relative to the repository."),
+        question: z.string().optional().describe("What the user wants to understand about it."),
+      },
+    },
+    ({ file, question }) =>
+      user(
+        promptText(dir, `Use Easy Instruct to walk me through ${file} on screen.${question ? ` My question: ${question}` : ""}`, "explain-file.md"),
+      ),
+  );
+
+  server.registerPrompt(
+    "run_project",
+    {
+      title: "Run the project",
+      description: "Coach the user through installing, running and testing the project themselves, explaining any errors.",
+      argsSchema: {
+        workspace: z.string().optional().describe("Absolute path of the repository."),
+        command: z.string().optional().describe("A command the user wants to run, if they know it."),
+      },
+    },
+    ({ workspace, command }) =>
+      user(
+        promptText(
+          dir,
+          `Use Easy Instruct to coach me while I install, run and test ${where(workspace)} myself.${command ? ` I want to run: ${command}` : ""}`,
+          "run-and-debug.md",
+        ),
+      ),
+  );
 }
