@@ -33,6 +33,12 @@ public class CaptureMathTests
     }
 
     [Fact]
+    public void Maps_screen_boxes_into_the_scaled_image()
+    {
+        Assert.Equal(new[] { 50, 25, 100, 50 }, CaptureMath.BoxToImage(new[] { 200, 100, 200, 100 }, 100, 50, 0.5));
+    }
+
+    [Fact]
     public void Handles_negative_origins_on_secondary_monitors()
     {
         Assert.Equal([-200, -100, 0], CaptureMath.GridLines(-250, 300, 100));
@@ -119,6 +125,16 @@ public class CaptureCommandTests
         Assert.Equal(100, Num(result["width"]));
         Assert.Equal(50, Num(result["height"]));
         Assert.Equal(0.25, (double)result["scale"], 6);
+    }
+
+    [Fact]
+    public void Draws_boxes_and_rejects_malformed_ones()
+    {
+        var box = new List<object> { 10.0, 10.0, 20.0, 10.0 };
+        var result = Capture(("x", 0.0), ("y", 0.0), ("w", 64.0), ("h", 32.0), ("boxes", new List<object> { box }));
+        Assert.Equal(64, Num(result["width"]));
+        Assert.Equal("BAD_ARGS", Assert.Throws<HelperException>(() =>
+            Capture(("x", 0.0), ("y", 0.0), ("w", 64.0), ("h", 32.0), ("boxes", new List<object> { new List<object> { 1.0, 2.0 } }))).Code);
     }
 
     [Fact]

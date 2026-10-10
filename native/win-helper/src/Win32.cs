@@ -20,6 +20,12 @@ namespace WinHelper
         public const uint GW_OWNER = 4;
         public const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
         public const int DWMWA_CLOAKED = 14;
+        public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
+        [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+        [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr handle);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "QueryFullProcessImageNameW")]
+        public static extern bool QueryFullProcessImageName(IntPtr process, uint flags, StringBuilder name, ref int size);
 
         [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
         [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hwnd);

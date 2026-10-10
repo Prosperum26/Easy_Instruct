@@ -61,6 +61,7 @@ for (const backend of backends) {
           hwnd: expect.any(Number),
           title: expect.any(String),
           process: expect.any(String),
+          path: expect.any(String),
           bounds: { x: expect.any(Number), y: expect.any(Number), w: expect.any(Number), h: expect.any(Number) },
           minimized: expect.any(Boolean),
           foreground: expect.any(Boolean),

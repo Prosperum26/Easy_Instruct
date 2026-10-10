@@ -37,6 +37,7 @@ namespace WinHelper
                 var title = Win32.WindowTitle(hwnd);
                 if (title.Length == 0) return true;
                 var processName = ProcessName(hwnd);
+                var processPath = ProcessPath(hwnd);
                 if (process != null && !string.Equals(processName, process, StringComparison.OrdinalIgnoreCase)) return true;
                 var frame = Win32.WindowFrame(hwnd);
                 if (frame.Right - frame.Left <= 0 || frame.Bottom - frame.Top <= 0) return true;
@@ -46,6 +47,7 @@ namespace WinHelper
                     { "hwnd", hwnd.ToInt64() },
                     { "title", title },
                     { "process", processName },
+                    { "path", processPath },
                     { "bounds", Bounds(frame) },
                     { "minimized", Win32.IsIconic(hwnd) },
                     { "foreground", hwnd == foreground },
@@ -122,6 +124,25 @@ namespace WinHelper
         private static Dictionary<string, object> Bounds(RECT r)
         {
             return Bounds(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
+        }
+
+        /// <summary>The window's executable (e.g. to find VS Code's CLI next to Code.exe); "" when not allowed.</summary>
+        private static string ProcessPath(IntPtr hwnd)
+        {
+            uint pid;
+            Win32.GetWindowThreadProcessId(hwnd, out pid);
+            var process = Win32.OpenProcess(Win32.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+            if (process == IntPtr.Zero) return "";
+            try
+            {
+                var buffer = new System.Text.StringBuilder(1024);
+                var size = buffer.Capacity;
+                return Win32.QueryFullProcessImageName(process, 0, buffer, ref size) ? buffer.ToString() : "";
+            }
+            finally
+            {
+                Win32.CloseHandle(process);
+            }
         }
 
         private static string ProcessName(IntPtr hwnd)

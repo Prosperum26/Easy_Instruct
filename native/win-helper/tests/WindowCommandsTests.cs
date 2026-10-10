@@ -13,6 +13,7 @@ public class WindowCommandsTests
             Assert.True(Num(Obj(window["bounds"])["w"]) > 0);
             Assert.True(Num(Obj(window["bounds"])["h"]) > 0);
             Assert.False(string.IsNullOrEmpty((string)window["title"]));
+            Assert.IsType<string>(window["path"]);
         }
     }
 

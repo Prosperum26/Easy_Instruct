@@ -21,6 +21,18 @@ namespace WinHelper
             return new OutputSize { Width = maxWidth, Height = Math.Max(1, (int)Math.Round(height * scale)), Scale = scale };
         }
 
+        /// <summary>A box in screen pixels mapped into an image captured at <paramref name="originX"/>, <paramref name="originY"/> and scaled.</summary>
+        public static int[] BoxToImage(int[] box, int originX, int originY, double scale)
+        {
+            return new[]
+            {
+                (int)Math.Round((box[0] - originX) * scale),
+                (int)Math.Round((box[1] - originY) * scale),
+                (int)Math.Round(box[2] * scale),
+                (int)Math.Round(box[3] * scale),
+            };
+        }
+
         /// <summary>Screen coordinates that are multiples of <paramref name="step"/> strictly inside [origin, origin + length].</summary>
         public static int[] GridLines(int origin, int length, int step)
         {
@@ -38,6 +50,7 @@ namespace WinHelper
         private const uint LineColor = 0x00C800FF; // COLORREF 0x00BBGGRR: magenta
         private const uint LabelColor = 0x0000E6FF; // yellow
         private const uint LabelBackground = 0x00201010;
+        private const uint BoxColor = 0x001C9FFF; // the overlay's accent, #FF9F1C
 
         public static void Register(Dispatcher dispatcher)
         {
@@ -46,7 +59,8 @@ namespace WinHelper
 
         /// <summary>
         /// Args: x, y, w, h (physical screen pixels), maxWidth (default 1600), grid (default false),
-        /// gridStep (default 100). Grid labels show screen coordinates, so they can be used directly.
+        /// gridStep (default 100), boxes ([[x, y, w, h], ...] in screen pixels, outlined in the overlay's accent
+        /// colour so the agent can check a highlight before showing it). Grid labels show screen coordinates.
         /// </summary>
         public static object Capture(Dictionary<string, object> args)
         {
@@ -60,9 +74,14 @@ namespace WinHelper
             var gridStep = Args.OptionalInt(args, "gridStep", 100);
             if (gridStep < 10) throw new HelperException("BAD_ARGS", "gridStep must be at least 10.");
 
+            var boxes = ReadBoxes(args);
+
             var size = CaptureMath.Shrink(w, h, maxWidth);
-            Action<IntPtr> decorate = null;
-            if (grid) decorate = delegate(IntPtr dc) { DrawGrid(dc, x, y, w, h, size, gridStep); };
+            Action<IntPtr> decorate = delegate(IntPtr dc)
+            {
+                if (grid) DrawGrid(dc, x, y, w, h, size, gridStep);
+                foreach (var box in boxes) DrawBox(dc, CaptureMath.BoxToImage(box, x, y, size.Scale));
+            };
             var pixels = Grab(x, y, w, h, size, decorate);
 
             return new Dictionary<string, object>
@@ -158,6 +177,45 @@ namespace WinHelper
             }
         }
 
+        private static List<int[]> ReadBoxes(Dictionary<string, object> args)
+        {
+            var boxes = new List<int[]>();
+            object value;
+            if (args == null || !args.TryGetValue("boxes", out value) || value == null) return boxes;
+            var list = value as List<object>;
+            if (list == null) throw new HelperException("BAD_ARGS", "boxes must be a list of [x, y, w, h].");
+            foreach (var item in list)
+            {
+                var box = item as List<object>;
+                if (box == null || box.Count != 4) throw new HelperException("BAD_ARGS", "Each box must be [x, y, w, h].");
+                var numbers = new int[4];
+                for (var i = 0; i < 4; i++)
+                {
+                    if (!(box[i] is double)) throw new HelperException("BAD_ARGS", "Box values must be numbers.");
+                    numbers[i] = (int)Math.Round((double)box[i]);
+                }
+                boxes.Add(numbers);
+            }
+            return boxes;
+        }
+
+        private static void DrawBox(IntPtr dc, int[] r)
+        {
+            var pen = Gdi.CreatePen(Gdi.PS_SOLID, 3, BoxColor);
+            var oldPen = Gdi.SelectObject(dc, pen);
+            var oldBrush = Gdi.SelectObject(dc, Gdi.GetStockObject(Gdi.NULL_BRUSH));
+            try
+            {
+                Gdi.Rectangle(dc, r[0], r[1], r[0] + r[2], r[1] + r[3]);
+            }
+            finally
+            {
+                Gdi.SelectObject(dc, oldPen);
+                Gdi.SelectObject(dc, oldBrush);
+                Gdi.DeleteObject(pen);
+            }
+        }
+
         private static void Label(IntPtr dc, int x, int y, string text)
         {
             Gdi.TextOutW(dc, x, y, text, text.Length);
@@ -169,7 +227,9 @@ namespace WinHelper
         public const uint SRCCOPY = 0x00CC0020;
         public const uint CAPTUREBLT = 0x40000000;
         public const int HALFTONE = 4;
+        public const int PS_SOLID = 0;
         public const int PS_DOT = 2;
+        public const int NULL_BRUSH = 5;
         public const int OPAQUE = 2;
         public const int TRANSPARENT = 1;
         public const uint WHITENESS = 0x00FF0062;
@@ -208,6 +268,8 @@ namespace WinHelper
         [DllImport("gdi32.dll")] public static extern uint SetTextColor(IntPtr dc, uint color);
         [DllImport("gdi32.dll")] public static extern uint SetBkColor(IntPtr dc, uint color);
         [DllImport("gdi32.dll")] public static extern int SetBkMode(IntPtr dc, int mode);
+        [DllImport("gdi32.dll")] public static extern bool Rectangle(IntPtr dc, int left, int top, int right, int bottom);
+        [DllImport("gdi32.dll")] public static extern IntPtr GetStockObject(int index);
         [DllImport("gdi32.dll")] public static extern bool PatBlt(IntPtr dc, int x, int y, int w, int h, uint rop);
         [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern bool TextOutW(IntPtr dc, int x, int y, string text, int length);
 
