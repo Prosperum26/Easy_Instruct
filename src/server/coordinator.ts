@@ -9,6 +9,7 @@ import { clipToBounds, inflate, union, type Point, type Rect } from "../shared/g
 import type { ButtonId, DisplayInfo, OverlayToServer, ServerToOverlay, StepMode } from "../shared/protocol.js";
 import { Session, type Effects, type StepInput } from "../session/session.js";
 import { EventWaiter, WaitInProgressError } from "../session/waiter.js";
+import { IdeWatch } from "./ide-watch.js";
 
 /** What the coordinator needs from a running overlay. */
 export interface OverlayLink {
@@ -82,7 +83,12 @@ export interface CoordinatorDeps {
   openFile?: (file: string, line: number, column: number, exePath?: string) => Promise<void>;
   fileExists?: (file: string) => boolean;
   sleep?: (ms: number) => Promise<void>;
+  /** How often the IDE window is checked for moves and focus (default 500 ms; 0: only when checkIde is called). */
+  watchIntervalMs?: number;
 }
+
+/** A step's targets and where each one currently is, so they can be re-located later. */
+type Placed = Array<{ target: Target; rect: Rect | null }>;
 
 /** A click this close outside a highlight still counts (physical pixels; the drawn border has padding). */
 const CLICK_TOLERANCE = 8;
@@ -148,6 +154,13 @@ export class Coordinator {
   private readonly screenshots = new ScreenshotStore();
   private readonly locator: Locator | null;
   private watchingClicks = false;
+  private readonly placed = new Map<string, Placed>();
+  /** Steps whose described targets may be out of date since the window moved; re-located when shown. */
+  private readonly stale = new Set<string>();
+  private ideWatch: IdeWatch | null = null;
+  private watchTimer: ReturnType<typeof setInterval> | null = null;
+  private checking = false;
+  private overlayHidden = false;
 
   constructor(private readonly deps: CoordinatorDeps) {
     this.locator = deps.helper
@@ -193,7 +206,12 @@ export class Coordinator {
       this.workspace = workspace;
       const ide = await this.findIde(workspace);
       this.ide = ide && { hwnd: ide.hwnd, title: ide.title, path: ide.path || undefined };
-      if (ide) this.warmUp(ide.hwnd);
+      this.placed.clear();
+      this.stale.clear();
+      if (ide) {
+        this.warmUp(ide.hwnd);
+        this.startIdeWatch(ide.minimized ? null : ide.bounds);
+      }
 
       const session = new Session();
       this.session = session;
@@ -252,7 +270,17 @@ export class Coordinator {
       actionButtons: MODE_BUTTONS[input.mode],
     };
     const effects = session.showStep(step);
+    this.placed.set(
+      effects.render.stepId,
+      input.targets
+        .filter((t) => t.kind !== "none")
+        .map((target) => {
+          const result = results[input.targets.indexOf(target)];
+          return { target, rect: result && "rect" in result ? result.rect : null };
+        }),
+    );
     this.apply(effects);
+    this.bringIdeForward();
     const preview = input.verify && highlights.length ? await this.preview(highlights) : undefined;
     return { stepId: effects.render.stepId, resolved, unresolved, ...(preview && { preview }) };
   }
@@ -275,7 +303,7 @@ export class Coordinator {
   }
 
   /** Explicit rects become screen rects; ui / text / lines targets go through the locator. Null: nothing to draw. */
-  private async resolveTargets(targets: Target[]) {
+  private async resolveTargets(targets: Target[], options: { reveal?: boolean } = {}) {
     type Result = { rect: Rect; method: ResolvedTarget["method"]; confidence: number; detail?: "view" | "icon"; clipped?: boolean };
     const results: Array<Result | { reason: UnresolvedTarget["reason"] } | null> = targets.map(() => null);
     const smart: Array<{ index: number; target: SmartTarget }> = [];
@@ -301,6 +329,7 @@ export class Coordinator {
         const located = await this.locator.locate(
           smart.map((s) => s.target),
           ide,
+          options,
         );
         smart.forEach(({ index }, k) => (results[index] = located[k]));
       }
@@ -337,6 +366,7 @@ export class Coordinator {
       actionButtons: MODE_BUTTONS.read,
     });
     this.apply(effects);
+    this.bringIdeForward();
     return { stepId: effects.render.stepId };
   }
 
@@ -470,7 +500,139 @@ export class Coordinator {
 
   private async refreshIde() {
     const ide = await this.findIde(this.workspace);
-    if (ide) this.ide = { hwnd: ide.hwnd, title: ide.title, path: ide.path || undefined };
+    if (!ide) return;
+    this.ide = { hwnd: ide.hwnd, title: ide.title, path: ide.path || undefined };
+    if (this.session?.phase === "active") this.startIdeWatch(ide.minimized ? null : ide.bounds);
+  }
+
+  /**
+   * Checks the IDE window once: re-locates highlights after it moved, hides the overlay while the
+   * user is in another app. Runs on a timer during a lesson; tests call it directly.
+   */
+  async checkIde(): Promise<void> {
+    const helper = this.deps.helper;
+    const ide = this.ide;
+    const watch = this.ideWatch;
+    if (!helper || !ide || !watch || this.session?.phase !== "active" || this.checking) return;
+    this.checking = true;
+    try {
+      let bounds: Rect | null = null;
+      let minimized = false;
+      try {
+        const state = await helper.request<{ bounds: Rect; minimized: boolean }>("window_bounds", { hwnd: ide.hwnd });
+        bounds = state.bounds;
+        minimized = state.minimized;
+      } catch (error) {
+        if (!(error instanceof HelperError && error.code === "WINDOW_NOT_FOUND")) return;
+      }
+      const front = await helper
+        .request<{ hwnd: number; process: string } | null>("foreground_window")
+        .catch(() => null);
+      if (this.ideWatch !== watch) return; // Replaced while we were asking.
+
+      const actions = watch.sample({ bounds, minimized, foregroundHwnd: front?.hwnd ?? null, foregroundProcess: front?.process ?? null });
+      for (const action of actions) {
+        if (action.type === "moved") this.onWindowMoved(action.from, action.to);
+        else if (action.type === "visibility") this.setOverlayVisible(action.visible);
+        else {
+          // VS Code was closed: forget it; the next step looks for it again.
+          this.ide = null;
+          this.stopIdeWatch();
+        }
+      }
+    } finally {
+      this.checking = false;
+    }
+  }
+
+  private startIdeWatch(bounds: Rect | null) {
+    this.stopIdeWatch();
+    if (!this.deps.helper || !this.ide) return;
+    this.ideWatch = new IdeWatch(this.ide.hwnd, bounds ?? { x: 0, y: 0, w: 0, h: 0 });
+    if (this.overlayHidden) this.setOverlayVisible(true);
+    const interval = this.deps.watchIntervalMs ?? 500;
+    if (interval > 0) {
+      this.watchTimer = setInterval(() => void this.checkIde(), interval);
+      this.watchTimer.unref?.();
+    }
+  }
+
+  private stopIdeWatch() {
+    if (this.watchTimer) clearInterval(this.watchTimer);
+    this.watchTimer = null;
+    this.ideWatch = null;
+  }
+
+  private setOverlayVisible(visible: boolean) {
+    this.overlayHidden = !visible;
+    this.overlay?.connection.send({ type: "visibility", visible });
+  }
+
+  /**
+   * Explicit rects follow the window at once. Described targets are found again: now for the
+   * step on screen, when shown again for the others.
+   */
+  private onWindowMoved(from: Rect, to: Rect) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const onScreen = this.session?.currentRender()?.stepId;
+    for (const [stepId, placed] of this.placed) {
+      this.placed.set(
+        stepId,
+        placed.map((p) => (p.target.kind === "rect" && p.rect ? { ...p, rect: { ...p.rect, x: p.rect.x + dx, y: p.rect.y + dy } } : p)),
+      );
+      const described = placed.some((p) => p.target.kind !== "rect");
+      if (stepId === onScreen) this.inBackground(() => this.relocate(stepId));
+      else if (described) this.stale.add(stepId);
+      else this.showPlaced(stepId);
+    }
+  }
+
+  /** Finds a step's described targets again where they are now, without reopening files. */
+  private async relocate(stepId: string) {
+    const placed = this.placed.get(stepId);
+    if (!placed || this.session?.phase !== "active") return;
+    const described = placed.filter((p) => p.target.kind !== "rect");
+    if (described.length) {
+      const results = await this.resolveTargets(
+        described.map((p) => p.target),
+        { reveal: false },
+      );
+      described.forEach((p, k) => {
+        const result = results[k];
+        p.rect = result && "rect" in result ? result.rect : null;
+      });
+    }
+    this.showPlaced(stepId);
+  }
+
+  private showPlaced(stepId: string) {
+    const placed = this.placed.get(stepId);
+    const session = this.session;
+    if (!placed || !session || session.phase !== "active") return;
+    const bounds = this.overlay?.connection.display().boundsPhysical;
+    const highlights = placed
+      .map((p) => (p.rect && bounds ? clipToBounds(p.rect, bounds) : p.rect))
+      .filter((r): r is Rect => r !== null);
+    this.apply(session.updateHighlights(stepId, highlights));
+  }
+
+  /**
+   * A new step is about the IDE: bring it forward if the user is elsewhere (e.g. in the terminal
+   * talking to the agent), otherwise the overlay would hide again right away.
+   */
+  private bringIdeForward() {
+    const helper = this.deps.helper;
+    const ide = this.ide;
+    if (!helper || !ide) return;
+    this.inBackground(async () => {
+      try {
+        const front = await helper.request<{ hwnd: number } | null>("foreground_window");
+        if (front?.hwnd !== ide.hwnd) await helper.request("focus_window", { hwnd: ide.hwnd });
+      } catch {
+        // Best effort.
+      }
+    });
   }
 
   /** Chromium builds VS Code's accessibility tree on the first UIA query; do it before the first step. */
@@ -533,6 +695,11 @@ export class Coordinator {
     if (effects.render) link?.send(effects.render);
     if (effects.status !== undefined) link?.send({ type: "status", text: effects.status });
     if (effects.close) this.inBackground(() => this.stopOverlay());
+    if (effects.render && this.stale.delete(effects.render.stepId)) {
+      const stepId = effects.render.stepId;
+      this.inBackground(() => this.relocate(stepId));
+    }
+    if (this.session?.phase !== "active") this.stopIdeWatch();
     this.syncClickWatch();
   }
 

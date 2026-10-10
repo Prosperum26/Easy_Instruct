@@ -96,3 +96,9 @@ function reindex(snapshot: UiaSnapshot, drop: Set<number>): UiaSnapshot {
   });
   return { ...snapshot, nodes };
 }
+
+/** The same snapshot with the window moved by dx, dy. */
+export function shifted(snapshot: UiaSnapshot, dx: number, dy: number): UiaSnapshot {
+  const move = (r: number[] | null) => (r ? [r[0] + dx, r[1] + dy, r[2], r[3]] : r);
+  return { ...snapshot, window: move(snapshot.window)!, nodes: snapshot.nodes.map((node) => ({ ...node, r: move(node.r) })) };
+}

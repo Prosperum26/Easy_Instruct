@@ -77,9 +77,17 @@ class Failure extends Error {
 export class Locator {
   constructor(private readonly deps: LocatorDeps) {}
 
-  async locate(targets: SmartTarget[], ide: { hwnd: number; workspace?: string } | null): Promise<Located[]> {
+  /**
+   * reveal (default true) opens files of lines targets at their line first; false finds lines where
+   * they already are, e.g. when re-locating after the window moved, so the user's scrolling is kept.
+   */
+  async locate(
+    targets: SmartTarget[],
+    ide: { hwnd: number; workspace?: string } | null,
+    options: { reveal?: boolean } = {},
+  ): Promise<Located[]> {
     if (!ide) return targets.map(() => ({ reason: "window_not_found" }));
-    const run = new Run(this.deps, ide);
+    const run = new Run(this.deps, ide, options.reveal ?? true);
     const results: Located[] = [];
     for (const target of targets) {
       try {
@@ -104,6 +112,7 @@ class Run {
   constructor(
     private readonly deps: LocatorDeps,
     private readonly ide: { hwnd: number; workspace?: string },
+    private readonly reveal: boolean,
   ) {}
 
   async locate(target: SmartTarget): Promise<Located> {
@@ -149,13 +158,16 @@ class Run {
     const absolute = path.isAbsolute(file) ? file : path.join(this.ide.workspace ?? "", file);
     if (!this.deps.fileExists(absolute)) return { reason: "file_not_found" };
 
-    await this.deps.openFile(absolute, start);
-    this.tree = null;
+    if (this.reveal) {
+      await this.deps.openFile(absolute, start);
+      this.tree = null;
+    }
 
     let lastReason: LocateFailure = "editor_not_found";
-    for (let attempt = 0; attempt < SHOW_FILE_ATTEMPTS; attempt++) {
+    const attempts = this.reveal ? SHOW_FILE_ATTEMPTS : 1;
+    for (let attempt = 0; attempt < attempts; attempt++) {
       if (attempt > 0) await this.deps.sleep(SHOW_FILE_DELAY_MS);
-      const tree = await this.snapshot(true);
+      const tree = await this.snapshot(this.reveal);
       const editor = this.editorShowing(tree, path.basename(absolute));
       if (!editor) continue;
 

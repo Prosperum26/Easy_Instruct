@@ -164,6 +164,20 @@ describe("Locator", () => {
       expect(await locator.locate([{ kind: "lines", file: APP, start: 400 }], ide)).toEqual([{ reason: "line_not_visible" }]);
     });
 
+    it("can find lines where they are without opening the file again", async () => {
+      const [result] = await locator.locate([{ kind: "lines", file: APP, start: 42, end: 44 }], ide, { reveal: false });
+      expect(opened).toEqual([]);
+      expect(result).toMatchObject({ rect: { y: TEXT_TOP + 2 * PITCH, h: 3 * PITCH }, method: "ocr_gutter" });
+    });
+
+    it("does not wait for a file that is not shown when not revealing", async () => {
+      helper.snapshot = otherFileActive();
+      expect(await locator.locate([{ kind: "lines", file: APP, start: 42 }], ide, { reveal: false })).toEqual([
+        { reason: "editor_not_found" },
+      ]);
+      expect(helper.callsTo("uia_snapshot")).toHaveLength(1);
+    });
+
     it("reports when the IDE's CLI cannot be found", async () => {
       openFile = async () => {
         throw new OpenFileError("ide_cli_not_found", "no CLI");

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { Coordinator, ToolError } from "../../src/server/coordinator.js";
 import { OpenFileError } from "../../src/locator/locator.js";
-import { explorerAndTerminal, searchOpenPanelClosed } from "../fixtures/uia/vscode-layout.js";
+import { explorerAndTerminal, searchOpenPanelClosed, shifted } from "../fixtures/uia/vscode-layout.js";
 import { FakeHelper } from "../helpers/fake-helper.js";
 import { FakeOverlayHandle } from "../helpers/fake-overlay-handle.js";
 
@@ -617,5 +617,105 @@ describe("Coordinator click steps", () => {
     overlay.press("exit");
     await coordinator.idle();
     expect(watchCalls().at(-1)).toBe(false);
+  });
+});
+
+describe("Coordinator watching the IDE window", () => {
+  let overlay: FakeOverlayHandle;
+  let helper: FakeHelper;
+  let coordinator: Coordinator;
+  let opened: number;
+
+  beforeEach(async () => {
+    helper = new FakeHelper();
+    helper.snapshot = explorerAndTerminal();
+    opened = 0;
+    coordinator = new Coordinator({
+      launch: async () => (overlay = new FakeOverlayHandle()),
+      helper,
+      openFile: async () => {
+        opened++;
+      },
+      fileExists: () => true,
+      sleep: async () => {},
+      watchIntervalMs: 0,
+    });
+    await coordinator.startSession({ title: "T", intro: "i", workspace: "C:\\repos\\fastapi-demo" });
+  });
+
+  const moveWindow = async (dx: number, dy: number) => {
+    const b = helper.windows[0].bounds;
+    helper.windows[0].bounds = { ...b, x: b.x + dx, y: b.y + dy };
+    helper.snapshot = shifted(explorerAndTerminal(), dx, dy);
+    await coordinator.checkIde();
+    await coordinator.checkIde();
+    await coordinator.idle();
+  };
+  const visibility = () => overlay.sent.filter((m) => m.type === "visibility");
+
+  it("re-locates described targets once the window settles in a new place", async () => {
+    await coordinator.showStep({ title: "A", body: "b", mode: "read", targets: [{ kind: "ui", element: "terminal" }] });
+    await moveWindow(-200, 0);
+    expect(overlay.lastRender().highlights).toEqual([{ x: 514, y: 542, w: 1200, h: 417 }]);
+  });
+
+  it("moves explicit rects along with the window", async () => {
+    await coordinator.showStep({ title: "A", body: "b", mode: "read", targets: [{ kind: "rect", x: 300, y: 300, w: 100, h: 40 }] });
+    await moveWindow(50, 20);
+    expect(overlay.lastRender().highlights).toEqual([{ x: 350, y: 320, w: 100, h: 40 }]);
+  });
+
+  it("finds code lines again without reopening the file", async () => {
+    helper.ocr = () => [];
+    await coordinator.showStep({ title: "A", body: "b", mode: "read", targets: [{ kind: "lines", file: "app.py", start: 3 }] });
+    await moveWindow(10, 0);
+    expect(opened).toBe(1);
+  });
+
+  it("leaves the highlights alone while the window does not move", async () => {
+    await coordinator.showStep({ title: "A", body: "b", mode: "read", targets: [{ kind: "ui", element: "terminal" }] });
+    const renders = overlay.sent.filter((m) => m.type === "render").length;
+    await coordinator.checkIde();
+    await coordinator.checkIde();
+    await coordinator.idle();
+    expect(overlay.sent.filter((m) => m.type === "render")).toHaveLength(renders);
+  });
+
+  it("hides the overlay while the user is in another app and shows it when they come back", async () => {
+    helper.foreground = { hwnd: 7, title: "Browser", process: "chrome" };
+    await coordinator.checkIde();
+    await coordinator.checkIde();
+    expect(visibility().at(-1)).toEqual({ type: "visibility", visible: false });
+    helper.foreground = { hwnd: 42, title: "VS Code", process: "Code" };
+    await coordinator.checkIde();
+    expect(visibility().at(-1)).toEqual({ type: "visibility", visible: true });
+  });
+
+  it("brings VS Code to the front when showing a step, unless it already is", async () => {
+    await coordinator.showStep({ title: "A", body: "b", mode: "read", targets: [] });
+    await coordinator.idle();
+    expect(helper.callsTo("focus_window")).toHaveLength(0);
+    helper.foreground = { hwnd: 7, title: "Terminal", process: "WindowsTerminal" };
+    await coordinator.showStep({ title: "B", body: "b", mode: "read", targets: [] });
+    await coordinator.idle();
+    expect(helper.callsTo("focus_window")).toEqual([{ cmd: "focus_window", args: { hwnd: 42 } }]);
+  });
+
+  it("hides when VS Code is closed and finds it again for the next step", async () => {
+    const windows = helper.windows;
+    helper.windows = [];
+    await coordinator.checkIde();
+    expect(visibility().at(-1)).toEqual({ type: "visibility", visible: false });
+    helper.windows = windows;
+    const result = await coordinator.showStep({ title: "A", body: "b", mode: "read", targets: [{ kind: "ui", element: "editor" }] });
+    expect(result.resolved).toHaveLength(1);
+  });
+
+  it("stops watching when the lesson ends", async () => {
+    overlay.press("exit");
+    await coordinator.idle();
+    const before = helper.calls.length;
+    await coordinator.checkIde();
+    expect(helper.calls.length).toBe(before);
   });
 });
