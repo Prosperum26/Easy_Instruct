@@ -35,4 +35,6 @@ export type OverlayToServer =
   | { type: "hello"; token: string; display: DisplayInfo }
   | { type: "display"; display: DisplayInfo }
   | { type: "button"; stepId: string; button: ButtonId }
-  | { type: "ask"; stepId: string; question: string };
+  | { type: "ask"; stepId: string; question: string }
+  /** The ask form closed; keyboard focus should go back to the app the user was in. */
+  | { type: "focus_released" };

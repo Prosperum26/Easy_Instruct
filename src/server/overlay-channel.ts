@@ -17,6 +17,7 @@ const messageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("display"), display: displaySchema }),
   z.object({ type: z.literal("button"), stepId: z.string(), button: buttonSchema }),
   z.object({ type: z.literal("ask"), stepId: z.string(), question: z.string().max(2000) }),
+  z.object({ type: z.literal("focus_released") }),
 ]);
 
 export class OverlayTimeoutError extends Error {

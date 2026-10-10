@@ -60,6 +60,9 @@ export function createOverlay(): Overlay {
   });
   window.setAlwaysOnTop(true, "screen-saver");
   window.setIgnoreMouseEvents(true, { forward: true });
+  // Keep the overlay out of screenshots (WDA_EXCLUDEFROMCAPTURE) so observe() sees the app, not the dim layer.
+  // Side effect: screen recordings and screen sharing do not show the overlay either.
+  window.setContentProtection(true);
 
   let display = primaryDisplayInfo();
   let lastRender: Extract<ServerToOverlay, { type: "render" }> | null = null;

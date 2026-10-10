@@ -167,6 +167,7 @@ function closeAsk() {
   api.setFocusable(false);
   // Focus handling re-enabled the mouse; restore click-through for where the cursor is now.
   api.setInteractive(interactive);
+  api.send({ type: "focus_released" });
 }
 
 function submitAsk() {

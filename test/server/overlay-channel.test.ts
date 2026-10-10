@@ -115,6 +115,13 @@ describe("OverlayChannel", () => {
       ]);
     });
 
+    it("delivers focus_released when the overlay gives keyboard focus back", async () => {
+      const { socket, connection } = await setup();
+      const got = new Promise<OverlayToServer>((resolve) => connection.onMessage(resolve));
+      socket.send(JSON.stringify({ type: "focus_released" }));
+      expect(await got).toEqual({ type: "focus_released" });
+    });
+
     it("updates the display when the overlay reports a change", async () => {
       const { socket, connection } = await setup();
       const changed = { scaleFactor: 1.5, boundsPhysical: { x: 0, y: 0, w: 2560, h: 1440 } };
