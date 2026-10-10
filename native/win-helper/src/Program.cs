@@ -6,6 +6,7 @@ using WinHelper;
 // Exits when stdin closes, so it never outlives the MCP server that started it.
 var dispatcher = new Dispatcher();
 dispatcher.Register("ping", _ => new JsonObject { ["pong"] = true });
+WindowCommands.Register(dispatcher);
 
 Console.InputEncoding = Encoding.UTF8;
 var stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
