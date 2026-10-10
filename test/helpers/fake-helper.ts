@@ -1,5 +1,5 @@
 import { HelperError } from "../../src/helper-client/helper-client.js";
-import type { Helper } from "../../src/server/coordinator.js";
+import type { Helper, HelperEvent } from "../../src/helper-client/helper.js";
 import type { WindowInfo } from "../../src/ide/windows.js";
 import type { UiaSnapshot } from "../../src/locator/uia.js";
 import type { OcrLine } from "../../src/locator/text.js";
@@ -24,6 +24,19 @@ export class FakeHelper implements Helper {
 
   /** What uia_snapshot returns; a function sees how many snapshots were taken before. */
   snapshot: UiaSnapshot | ((count: number) => UiaSnapshot) | null = null;
+  private eventListeners: Array<(event: HelperEvent) => void> = [];
+  /** Answers for window_bounds / foreground_window can be changed by tests. */
+  foreground: { hwnd: number; title: string; process: string } | null = { hwnd: 42, title: "VS Code", process: "Code" };
+
+  onEvent(listener: (event: HelperEvent) => void) {
+    this.eventListeners.push(listener);
+  }
+
+  /** Acts as the helper printing an event line, e.g. a click. */
+  emit(event: HelperEvent) {
+    this.eventListeners.forEach((listener) => listener(event));
+  }
+
   /** What ocr returns for a region. */
   ocr: (region: Rect) => OcrLine[] = () => [];
 
@@ -62,6 +75,10 @@ export class FakeHelper implements Helper {
       }
       case "focus_window":
         return { focused: true };
+      case "foreground_window":
+        return this.foreground;
+      case "watch_clicks":
+        return { watching: args.enabled };
       case "uia_snapshot": {
         if (!this.snapshot) throw new HelperError("WINDOW_NOT_FOUND", "no snapshot scripted");
         const count = this.callsTo("uia_snapshot").length - 1;

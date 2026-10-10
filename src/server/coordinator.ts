@@ -84,6 +84,9 @@ export interface CoordinatorDeps {
   sleep?: (ms: number) => Promise<void>;
 }
 
+/** A click this close outside a highlight still counts (physical pixels; the drawn border has padding). */
+const CLICK_TOLERANCE = 8;
+
 /** Room around the highlights in a verify preview, so the agent sees what they sit in. */
 const PREVIEW_MARGIN = 80;
 const PREVIEW_MAX_WIDTH = 1000;
@@ -144,6 +147,7 @@ export class Coordinator {
   private workspace: string | undefined;
   private readonly screenshots = new ScreenshotStore();
   private readonly locator: Locator | null;
+  private watchingClicks = false;
 
   constructor(private readonly deps: CoordinatorDeps) {
     this.locator = deps.helper
@@ -154,6 +158,9 @@ export class Coordinator {
           sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
         })
       : null;
+    deps.helper?.onEvent?.((event) => {
+      if (event.event === "click") this.onScreenClick(Number(event.x), Number(event.y));
+    });
   }
 
   async startSession({
@@ -526,6 +533,37 @@ export class Coordinator {
     if (effects.render) link?.send(effects.render);
     if (effects.status !== undefined) link?.send({ type: "status", text: effects.status });
     if (effects.close) this.inBackground(() => this.stopOverlay());
+    this.syncClickWatch();
+  }
+
+  /** Clicks are only watched while a click step with a highlight is on screen. */
+  private syncClickWatch() {
+    const helper = this.deps.helper;
+    if (!helper) return;
+    const current = this.session?.phase === "active" ? this.session.currentRender() : undefined;
+    const wanted = current?.mode === "click" && current.highlights.length > 0;
+    if (wanted === this.watchingClicks) return;
+    this.watchingClicks = wanted;
+    this.inBackground(async () => {
+      try {
+        await helper.request("watch_clicks", { enabled: wanted });
+      } catch {
+        // The user can still press Skip.
+      }
+    });
+  }
+
+  private onScreenClick(x: number, y: number) {
+    const session = this.session;
+    const current = session?.phase === "active" ? session.currentRender() : undefined;
+    if (!session || current?.mode !== "click") return;
+    const hit = current.highlights.some((h) => {
+      const r = inflate(h, CLICK_TOLERANCE);
+      return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+    });
+    if (!hit) return;
+    this.apply(session.handleClick(current.stepId));
+    this.waiter?.notify();
   }
 
   private async stopOverlay() {
@@ -544,6 +582,7 @@ export class Coordinator {
 
     const giveUp = () => {
       session.abort("overlay_crashed");
+      this.syncClickWatch();
       this.waiter?.notify();
     };
     if (session.phase !== "active" || this.restarts >= MAX_OVERLAY_RESTARTS) return giveUp();

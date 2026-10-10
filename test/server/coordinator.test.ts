@@ -554,3 +554,68 @@ describe("Coordinator smart targets", () => {
     });
   });
 });
+
+describe("Coordinator click steps", () => {
+  let overlay: FakeOverlayHandle;
+  let helper: FakeHelper;
+  let coordinator: Coordinator;
+
+  beforeEach(async () => {
+    helper = new FakeHelper();
+    coordinator = new Coordinator({ launch: async () => (overlay = new FakeOverlayHandle()), helper });
+    await coordinator.startSession({ title: "T", intro: "i" });
+  });
+
+  const watchCalls = () => helper.callsTo("watch_clicks").map((c) => c.args?.enabled);
+  const clickStep = () =>
+    coordinator.showStep({ title: "Click", body: "b", mode: "click", targets: [{ kind: "rect", x: 100, y: 100, w: 200, h: 50 }] });
+  const readStep = () => coordinator.showStep({ title: "Read", body: "b", mode: "read", targets: [] });
+
+  it("watches clicks only while a click step is on screen", async () => {
+    await clickStep();
+    await readStep();
+    await coordinator.idle();
+    expect(watchCalls()).toEqual([true, false]);
+  });
+
+  it("does not watch a click step without a highlight", async () => {
+    await coordinator.showStep({ title: "Click", body: "b", mode: "click", targets: [] });
+    await coordinator.idle();
+    expect(watchCalls()).toEqual([]);
+  });
+
+  it("completes the step when the user clicks inside the highlight", async () => {
+    const { stepId } = await clickStep();
+    const waiting = coordinator.waitForUser({ timeoutSec: 5 });
+    helper.emit({ event: "click", x: 150, y: 120 });
+    await expect(waiting).resolves.toEqual({ event: "clicked", step_id: stepId });
+  });
+
+  it("forgives a click just outside the highlight border", async () => {
+    const { stepId } = await clickStep();
+    helper.emit({ event: "click", x: 98, y: 98 });
+    await expect(coordinator.waitForUser({ timeoutSec: 1 })).resolves.toEqual({ event: "clicked", step_id: stepId });
+  });
+
+  it("ignores clicks elsewhere", async () => {
+    await clickStep();
+    helper.emit({ event: "click", x: 900, y: 900 });
+    await expect(coordinator.waitForUser({ timeoutSec: 0.05 })).resolves.toEqual({ event: "timeout" });
+  });
+
+  it("follows local navigation: watching stops on an earlier read step and resumes on the click step", async () => {
+    await readStep();
+    await clickStep();
+    overlay.press("back");
+    overlay.press("next");
+    await coordinator.idle();
+    expect(watchCalls()).toEqual([true, false, true]);
+  });
+
+  it("stops watching when the lesson ends", async () => {
+    await clickStep();
+    overlay.press("exit");
+    await coordinator.idle();
+    expect(watchCalls().at(-1)).toBe(false);
+  });
+});
