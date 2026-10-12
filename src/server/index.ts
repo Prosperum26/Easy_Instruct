@@ -1,4 +1,5 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { FallbackHelper, helperBackends } from "../helper-client/fallback.js";
@@ -9,6 +10,7 @@ import { Coordinator } from "./coordinator.js";
 import { formatReport, isReady, runDoctor } from "./doctor.js";
 import { guideDir, listGuide } from "./guide.js";
 import { launchOverlay } from "./overlay-launcher.js";
+import { PROBE_USAGE, parseProbeArgs, runProbe } from "./probe.js";
 import { createServer, VERSION } from "./tools.js";
 
 const require = createRequire(import.meta.url);
@@ -19,10 +21,12 @@ const helperDir = fileURLToPath(new URL("../win-helper/", import.meta.url));
 
 const [command, ...flags] = process.argv.slice(2);
 if (command === "doctor") await doctor();
+else if (command === "probe") await probe();
 else if (command === "--version" || command === "-v") console.log(VERSION);
 else if (command === undefined) await serve();
 else {
-  console.error(`Unknown command: ${command}\nUsage: easy-instruct          MCP server over stdio\n       easy-instruct doctor   check this machine [--json] [--no-overlay]`);
+  console.error(`Unknown command: ${command}\nUsage: easy-instruct          MCP server over stdio\n       easy-instruct doctor   check this machine [--json] [--no-overlay]
+       ${PROBE_USAGE}`);
   process.exit(2);
 }
 
@@ -49,6 +53,28 @@ async function doctor() {
   if (flags.includes("--json")) console.log(JSON.stringify({ version: VERSION, ready: isReady(checks), checks }, null, 2));
   else console.log(formatReport(checks));
   process.exit(isReady(checks) ? 0 : 1);
+}
+
+async function probe() {
+  const args = parseProbeArgs(flags);
+  if ("error" in args) {
+    console.error(`${args.error}
+Usage: ${PROBE_USAGE}`);
+    process.exit(2);
+  }
+  const helper = new FallbackHelper(helperBackends(helperDir, process.env.EASY_INSTRUCT_HELPER));
+  try {
+    const report = await runProbe(helper, { ...args, includeSnapshot: true });
+    const { snapshot, ...summary } = report;
+    console.log(JSON.stringify(summary, null, 2));
+    if (args.out && snapshot) writeFileSync(args.out, JSON.stringify(report, null, 2));
+    await helper.close();
+    process.exit(report.window ? 0 : 1);
+  } catch (error) {
+    console.error((error as Error).message);
+    await helper.close();
+    process.exit(1);
+  }
 }
 
 async function serve() {
